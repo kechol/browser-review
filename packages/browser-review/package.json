@@ -1,0 +1,32 @@
+{
+  "name": "browser-review",
+  "version": "0.1.0",
+  "description": "Point at an element in your browser, leave a comment, and let your local coding agent fix the code behind it.",
+  "license": "Apache-2.0",
+  "author": "kechol",
+  "homepage": "https://github.com/kechol/browser-review-plugin#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kechol/browser-review-plugin.git",
+    "directory": "packages/browser-review"
+  },
+  "bugs": "https://github.com/kechol/browser-review-plugin/issues",
+  "keywords": ["claude-code", "mcp", "code-review", "browser", "annotation", "localhost"],
+  "type": "module",
+  "bin": { "browser-review": "./dist/cli.js" },
+  "exports": { ".": "./dist/cli.js" },
+  "files": ["dist", "LICENSE", "NOTICE", "README.md"],
+  "engines": { "node": ">=22" },
+  "os": ["darwin", "linux"],
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "chokidar": "^5.0.0",
+    "parse5": "^8.0.1",
+    "ws": "^8.21.3",
+    "zod": "^4.6.5"
+  },
+  "publishConfig": { "access": "public" }
+}
