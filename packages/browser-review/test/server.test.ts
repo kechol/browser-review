@@ -1,0 +1,274 @@
+// SPDX-License-Identifier: Apache-2.0
+import { randomBytes } from "node:crypto";
+import fs from "node:fs/promises";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import WebSocket from "ws";
+
+let stateHome: string;
+let pageDir: string;
+let upstream: http.Server;
+let upstreamPort: number;
+
+beforeAll(async () => {
+  stateHome = await fs.mkdtemp(path.join(os.tmpdir(), "browser-review-state-"));
+  process.env["XDG_STATE_HOME"] = stateHome;
+
+  pageDir = await fs.mkdtemp(path.join(os.tmpdir(), "browser-review-page-"));
+  await fs.writeFile(
+    path.join(pageDir, "page.html"),
+    `<!doctype html>
+<html><body>
+  <h1 class="hero">Hello</h1>
+</body></html>
+`,
+  );
+
+  upstream = http.createServer((req, res) => {
+    if (req.url === "/go") {
+      res.writeHead(302, { location: `http://127.0.0.1:${upstreamPort}/there` });
+      return res.end();
+    }
+    if (req.url === "/data.json") {
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end('{"ok":true}');
+    }
+    res.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "content-security-policy": "default-src 'self'",
+    });
+    res.end("<html><body><button>Buy</button></body></html>");
+  });
+  await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+  upstreamPort = (upstream.address() as { port: number }).port;
+});
+
+afterAll(async () => {
+  await new Promise<void>((resolve) => upstream.close(() => resolve()));
+  await fs.rm(stateHome, { recursive: true, force: true });
+  await fs.rm(pageDir, { recursive: true, force: true });
+});
+
+const { startReviewServer } = await import("../src/server.js");
+const { readSessionFile } = await import("../src/store.js");
+
+function token() {
+  return randomBytes(24).toString("base64url");
+}
+
+async function startHtmlSession() {
+  const id = `T${Date.now()}${Math.random().toString(36).slice(2, 8)}`.toUpperCase();
+  const tok = token();
+  const running = await startReviewServer({
+    id,
+    token: tok,
+    mode: "html-file",
+    target: path.join(pageDir, "page.html"),
+    projectDir: pageDir,
+    port: 0,
+  });
+  const base = `http://127.0.0.1:${running.session.port}/r/${tok}`;
+  return { running, base, id, origin: `http://127.0.0.1:${running.session.port}` };
+}
+
+describe("html-file mode", () => {
+  it("serves the file tagged with its own source positions, plus the overlay", async () => {
+    const { running, base } = await startHtmlSession();
+    try {
+      const html = await (await fetch(`${base}/`)).text();
+      expect(html).toContain('data-review-src="page.html:3:3"');
+      expect(html).toContain("__br/overlay.js");
+    } finally {
+      await running.close();
+    }
+  });
+
+  it("answers 404 for a wrong token rather than admitting the session exists", async () => {
+    const { running } = await startHtmlSession();
+    try {
+      const res = await fetch(
+        `http://127.0.0.1:${running.session.port}/r/${"x".repeat(32)}/`,
+      );
+      expect(res.status).toBe(404);
+    } finally {
+      await running.close();
+    }
+  });
+
+  it("refuses a request whose Host is not loopback", async () => {
+    // fetch() will not let us forge a Host header, and a Host that does not
+    // name a loopback address is exactly the shape of a DNS-rebinding attempt,
+    // so this one goes out over a raw socket.
+    const { running } = await startHtmlSession();
+    try {
+      const status = await new Promise<number>((resolve, reject) => {
+        const req = http.request(
+          {
+            host: "127.0.0.1",
+            port: running.session.port,
+            path: `/r/${running.session.token}/`,
+            headers: { host: "attacker.example" },
+          },
+          (res) => {
+            res.resume();
+            resolve(res.statusCode ?? 0);
+          },
+        );
+        req.on("error", reject);
+        req.end();
+      });
+      expect(status).toBe(404);
+    } finally {
+      await running.close();
+    }
+  });
+
+  it("will not serve a file outside the page's own directory", async () => {
+    const { running, base } = await startHtmlSession();
+    try {
+      const res = await fetch(`${base}/../../etc/passwd`);
+      expect(res.status).toBe(404);
+    } finally {
+      await running.close();
+    }
+  });
+});
+
+describe("the review round trip", () => {
+  it("carries a comment from the browser to an agent and the resolution back", async () => {
+    const { running, base, id, origin } = await startHtmlSession();
+    try {
+      const socket = new WebSocket(`${base}/__br/ws`.replace("http", "ws"), { origin });
+      const seen: unknown[] = [];
+      await new Promise((resolve, reject) => {
+        socket.on("open", resolve);
+        socket.on("error", reject);
+      });
+      socket.on("message", (raw) => seen.push(JSON.parse(String(raw))));
+
+      socket.send(
+        JSON.stringify({
+          type: "annotate",
+          annotation: {
+            comment: "Make the heading bigger.",
+            page: { url: `${base}/`, path: "/", title: "t" },
+            element: { outerHtmlHead: '<h1 class="hero" value="secret">Hello</h1>', tag: "h1" },
+            sourceHints: [
+              {
+                kind: "loc",
+                file: "page.html",
+                line: 3,
+                col: 3,
+                confidence: 0.95,
+                via: "data-review-src",
+              },
+            ],
+          },
+        }),
+      );
+      await new Promise((r) => setTimeout(r, 200));
+
+      const pending = (await (await fetch(`${base}/__br/pending`)).json()) as {
+        annotations: Array<{ id: string; comment: string; element: { outerHtmlHead: string } }>;
+      };
+      expect(pending.annotations).toHaveLength(1);
+      expect(pending.annotations[0]!.comment).toBe("Make the heading bigger.");
+      expect(pending.annotations[0]!.element.outerHtmlHead).not.toContain("secret");
+
+      const annotationId = pending.annotations[0]!.id;
+      const resolved = await fetch(`${base}/__br/resolve`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: annotationId,
+          summary: "Bumped it to 2rem.",
+          filesChanged: ["page.html"],
+        }),
+      });
+      expect(resolved.status).toBe(200);
+
+      await new Promise((r) => setTimeout(r, 300));
+      expect(
+        seen.some(
+          (m) =>
+            (m as { type?: string; annotation?: { status?: string } }).type === "updated" &&
+            (m as { annotation?: { status?: string } }).annotation?.status === "resolved",
+        ),
+      ).toBe(true);
+
+      const file = await readSessionFile(id);
+      expect(file?.annotations[0]?.resolution?.summary).toBe("Bumped it to 2rem.");
+      socket.close();
+    } finally {
+      await running.close();
+    }
+  });
+
+  it("turns away a websocket from another origin", async () => {
+    const { running, base } = await startHtmlSession();
+    try {
+      const rejected = await new Promise<boolean>((resolve) => {
+        const socket = new WebSocket(`${base}/__br/ws`.replace("http", "ws"), {
+          origin: "http://evil.example",
+        });
+        socket.on("error", () => resolve(true));
+        socket.on("open", () => {
+          socket.close();
+          resolve(false);
+        });
+      });
+      expect(rejected).toBe(true);
+    } finally {
+      await running.close();
+    }
+  });
+
+  it("will not let a web page reach the MCP endpoint", async () => {
+    const { running, base } = await startHtmlSession();
+    try {
+      const res = await fetch(`${base}/__br/mcp`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: "http://evil.example" },
+        body: "{}",
+      });
+      expect(res.status).toBe(404);
+    } finally {
+      await running.close();
+    }
+  });
+});
+
+describe("proxy mode", () => {
+  it("injects the overlay, drops the CSP, and leaves other responses alone", async () => {
+    const id = `P${Date.now()}`.toUpperCase();
+    const tok = token();
+    const running = await startReviewServer({
+      id,
+      token: tok,
+      mode: "proxy",
+      target: `http://localhost:${upstreamPort}`,
+      projectDir: pageDir,
+      port: 0,
+    });
+    const base = `http://127.0.0.1:${running.session.port}/r/${tok}`;
+    try {
+      const page = await fetch(`${base}/`);
+      const html = await page.text();
+      expect(html).toContain("__br/overlay.js");
+      expect(page.headers.get("content-security-policy")).toBeNull();
+
+      const json = await fetch(`${base}/data.json`);
+      expect(json.headers.get("content-type")).toContain("application/json");
+      expect(await json.text()).toBe('{"ok":true}');
+
+      const redirect = await fetch(`${base}/go`, { redirect: "manual" });
+      expect(redirect.headers.get("location")).toBe(
+        `http://127.0.0.1:${running.session.port}/r/${tok}/there`,
+      );
+    } finally {
+      await running.close();
+    }
+  });
+});

@@ -50,6 +50,8 @@ export interface StartOptions {
   projectDir: string;
   /** 0 asks the OS for a free port. */
   port: number;
+  /** Path the review URL opens on. Proxy mode only. */
+  entryPath?: string;
 }
 
 export interface RunningServer {
@@ -57,8 +59,18 @@ export interface RunningServer {
   close(): Promise<void>;
 }
 
+/**
+ * Where the built overlay lives.
+ *
+ * Next to the bundled CLI when installed, and one directory over in `dist/`
+ * when the tests run this file straight from `src/`.
+ */
 function overlayBundlePath(): string {
-  return path.join(MODULE_DIR, "overlay.js");
+  const candidates = [
+    path.join(MODULE_DIR, "overlay.js"),
+    path.join(MODULE_DIR, "..", "dist", "overlay.js"),
+  ];
+  return candidates.find((candidate) => fsSync.existsSync(candidate)) ?? candidates[0]!;
 }
 
 export async function startReviewServer(opts: StartOptions): Promise<RunningServer> {
@@ -101,6 +113,7 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
     port,
     pid: process.pid,
     createdAt: new Date().toISOString(),
+    ...(opts.entryPath ? { entryPath: opts.entryPath } : {}),
   };
   await writeSessionFile({ session, annotations: [] });
 

@@ -14,7 +14,8 @@ export function quoteComment(comment: string): string {
 }
 
 export function reviewUrl(session: Session): string {
-  return `http://127.0.0.1:${session.port}/r/${session.token}/`;
+  const entry = (session.entryPath ?? "").replace(/^\/+/, "");
+  return `http://127.0.0.1:${session.port}/r/${session.token}/${entry}`;
 }
 
 /**

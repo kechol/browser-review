@@ -42,12 +42,28 @@ function filterRequestHeaders(headers: IncomingMessage["headers"], upstream: URL
   return out;
 }
 
-function rewriteLocation(location: string, opts: ProxyOptions): string {
-  const upstreamOrigin = opts.upstream.origin;
-  if (location.startsWith(upstreamOrigin)) {
-    return opts.selfOrigin + opts.basePath + location.slice(upstreamOrigin.length);
-  }
+const LOOPBACK_NAMES = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
+/**
+ * Point a redirect back at the review server.
+ *
+ * Matching on the port rather than the whole origin matters: a dev server told
+ * to listen on `localhost` routinely answers with `127.0.0.1` in `Location`,
+ * and a string comparison against the origin the user typed would miss it and
+ * send the browser straight past the overlay.
+ */
+export function rewriteLocation(location: string, opts: ProxyOptions): string {
   if (location.startsWith("/")) return opts.basePath + location;
+  let url: URL;
+  try {
+    url = new URL(location);
+  } catch {
+    return location;
+  }
+  const samePort = (url.port || "80") === (opts.upstream.port || "80");
+  if (url.protocol === "http:" && samePort && LOOPBACK_NAMES.has(url.hostname)) {
+    return opts.selfOrigin + opts.basePath + url.pathname + url.search + url.hash;
+  }
   return location;
 }
 

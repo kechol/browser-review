@@ -5,7 +5,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import type { OpenResult, SessionMode } from "@browser-review/shared";
 import { feedUrl, formatStatus, mcpUrl, reviewUrl } from "./format.js";
@@ -52,9 +52,14 @@ function newToken(): string {
   return randomBytes(24).toString("base64url");
 }
 
+/** A problem with what the user asked for, as opposed to a crash. */
+export class TargetError extends Error {}
+
 interface ParsedTarget {
   mode: SessionMode;
   target: string;
+  /** Path the review URL should open on, for a URL that named more than the root. */
+  entryPath?: string;
 }
 
 /**
@@ -68,31 +73,36 @@ export function parseTarget(raw: string, cwd: string): ParsedTarget {
     try {
       url = new URL(raw);
     } catch {
-      fail(`"${raw}" is not a URL this tool can open.`);
+      throw new TargetError(`"${raw}" is not a URL this tool can open.`);
     }
     if (url.protocol !== "http:") {
-      fail(
+      throw new TargetError(
         `only http:// URLs are supported (got "${url.protocol}//"). ` +
           "A local dev server is served over http.",
       );
     }
     if (url.hostname !== "localhost" && url.hostname !== "127.0.0.1" && url.hostname !== "::1") {
-      fail(
+      throw new TargetError(
         `"${url.hostname}" is not a local host. browser-review only proxies ` +
           "http://localhost and http://127.0.0.1, because injecting a review overlay into " +
           "a site you do not run is neither safe nor yours to do. To review a deployed page, " +
           "run it locally first.",
       );
     }
-    return { mode: "proxy", target: url.origin + url.pathname.replace(/\/$/, "") || url.origin };
+    const entryPath = url.pathname === "/" ? "" : url.pathname + url.search;
+    return entryPath
+      ? { mode: "proxy", target: url.origin, entryPath }
+      : { mode: "proxy", target: url.origin };
   }
 
   const resolved = path.resolve(cwd, raw);
-  if (!fs.existsSync(resolved)) fail(`no such file: ${resolved}`);
-  if (!fs.statSync(resolved).isFile()) fail(`${resolved} is not a file.`);
+  if (!fs.existsSync(resolved)) throw new TargetError(`no such file: ${resolved}`);
+  if (!fs.statSync(resolved).isFile()) throw new TargetError(`${resolved} is not a file.`);
   const ext = path.extname(resolved).toLowerCase();
   if (ext !== ".html" && ext !== ".htm") {
-    fail(`${resolved} is not an HTML file. Pass an .html file, or a http://localhost URL.`);
+    throw new TargetError(
+      `${resolved} is not an HTML file. Pass an .html file, or a http://localhost URL.`,
+    );
   }
   return { mode: "html-file", target: resolved };
 }
@@ -116,7 +126,14 @@ async function cmdOpen(argv: string[]): Promise<void> {
   if (!raw) fail("open needs a target: an .html file or a http://localhost URL.");
 
   const cwd = process.cwd();
-  const { mode, target } = parseTarget(raw, cwd);
+  let parsed: ParsedTarget;
+  try {
+    parsed = parseTarget(raw, cwd);
+  } catch (err) {
+    if (err instanceof TargetError) fail(err.message);
+    throw err;
+  }
+  const { mode, target, entryPath } = parsed;
   const projectDir = projectDirFrom(values["project-dir"], cwd);
   const port = Number(values["port"] ?? 0);
   if (!Number.isInteger(port) || port < 0 || port > 65_535) fail(`invalid port: ${values["port"]}`);
@@ -147,6 +164,7 @@ async function cmdOpen(argv: string[]): Promise<void> {
       projectDir,
       "--port",
       String(port),
+      ...(entryPath ? ["--entry-path", entryPath] : []),
     ],
     { detached: true, stdio: ["ignore", logFd, logFd] },
   );
@@ -208,9 +226,11 @@ async function cmdServe(argv: string[]): Promise<void> {
       target: { type: "string" },
       "project-dir": { type: "string" },
       port: { type: "string" },
+      "entry-path": { type: "string" },
     },
   });
   const { startReviewServer } = await import("./server.js");
+  const entryPath = values["entry-path"];
   const running = await startReviewServer({
     id: String(values["id"]),
     token: String(values["token"]),
@@ -218,6 +238,7 @@ async function cmdServe(argv: string[]): Promise<void> {
     target: String(values["target"]),
     projectDir: String(values["project-dir"]),
     port: Number(values["port"] ?? 0),
+    ...(entryPath ? { entryPath } : {}),
   });
   const shutdown = () => {
     void running.close().then(() => process.exit(0));
@@ -353,6 +374,23 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err: unknown) => {
-  fail((err as Error).stack ?? String(err));
-});
+/**
+ * Only run when this file is what was executed. The tests import `parseTarget`
+ * from here, and a module that starts parsing argv on import would print usage
+ * into the middle of a test run.
+ */
+function isEntryPoint(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return import.meta.url === pathToFileURL(entry).href;
+  } catch {
+    return false;
+  }
+}
+
+if (isEntryPoint()) {
+  main().catch((err: unknown) => {
+    fail((err as Error).stack ?? String(err));
+  });
+}

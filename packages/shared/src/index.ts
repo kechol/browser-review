@@ -86,6 +86,11 @@ export interface Session {
   mode: SessionMode;
   /** Absolute file path in `html-file` mode, upstream origin URL in `proxy` mode. */
   target: string;
+  /**
+   * Path the review URL should land on, for when the user asked to review
+   * `http://localhost:5173/admin` rather than the root. Proxy mode only.
+   */
+  entryPath?: string;
   projectDir: string;
   port: number;
   pid: number;
