@@ -333,12 +333,20 @@ async function cmdMcp(argv: string[]): Promise<void> {
   const { createMcpServer, sessionContextFor } = await import("./mcp.js");
   const { PollDelivery } = await import("./delivery/poll.js");
 
+  const { createScreenshotter } = await import("./screenshot.js");
+
   await ensureDirs();
   const delivery = new PollDelivery();
-  const server = createMcpServer({
-    resolveSession: sessionContextFor(values["session"] ?? "latest"),
-    delivery,
-  });
+  const resolve = sessionContextFor(values["session"] ?? "latest");
+  // The screenshot backend needs a session to point a browser at, and this
+  // process may well start before one exists, so it is built per call.
+  const screenshot = async (selector?: string) => {
+    const file = await resolve();
+    if (!file) return null;
+    const capture = await createScreenshotter(file.session);
+    return capture ? capture(selector) : null;
+  };
+  const server = createMcpServer({ resolveSession: resolve, delivery, screenshot });
   const transport = new StdioServerTransport();
   await server.connect(transport);
 

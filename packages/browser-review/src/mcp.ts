@@ -23,8 +23,12 @@ export interface ToolContext {
   /** Which session the tools act on. Re-resolved per call so `latest` stays current. */
   resolveSession(): Promise<SessionFile | null>;
   delivery: Delivery;
-  /** Optional; absent unless Playwright is installed alongside. */
-  screenshot?: (selector?: string) => Promise<{ base64: string; mimeType: string }>;
+  /**
+   * Optional. Resolving to null means the backend is not available — the stdio
+   * server only finds that out when it is asked, because it may start before
+   * any session exists.
+   */
+  screenshot?: (selector?: string) => Promise<{ base64: string; mimeType: string } | null>;
 }
 
 export function sessionContextFor(ref: string | undefined): ToolContext["resolveSession"] {
@@ -317,14 +321,14 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       },
     },
     async ({ selector }) => {
-      if (!ctx.screenshot) {
+      const shot = await ctx.screenshot?.(selector);
+      if (!shot) {
         return text(
           "not_supported: screenshots need Playwright installed next to browser-review " +
             "(`npm i -D playwright` and `npx playwright install chromium`). Everything else " +
             "works without it.",
         );
       }
-      const shot = await ctx.screenshot(selector);
       return {
         content: [{ type: "image" as const, data: shot.base64, mimeType: shot.mimeType }],
       };

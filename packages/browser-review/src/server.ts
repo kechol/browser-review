@@ -17,6 +17,7 @@ import type {
 import { createMcpServer, sessionContextForId } from "./mcp.js";
 import { PollDelivery } from "./delivery/poll.js";
 import { createAnnotation } from "./annotations.js";
+import { createScreenshotter } from "./screenshot.js";
 import { injectOverlay, instrumentHtml } from "./instrument.js";
 import { proxyRequest, proxyUpgrade, type ProxyOptions } from "./proxy.js";
 import {
@@ -116,6 +117,9 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
     ...(opts.entryPath ? { entryPath: opts.entryPath } : {}),
   };
   await writeSessionFile({ session, annotations: [] });
+
+  // Probed once: absent unless Playwright happens to be installed alongside.
+  const screenshot = await createScreenshotter(session);
 
   const overlayConfig = {
     base: basePath,
@@ -315,6 +319,7 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
     const mcpServer = createMcpServer({
       resolveSession: sessionContextForId(opts.id),
       delivery,
+      ...(screenshot ? { screenshot } : {}),
     });
     res.on("close", () => {
       void transport.close();

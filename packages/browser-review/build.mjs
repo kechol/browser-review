@@ -19,7 +19,9 @@ await build({
   // Runtime dependencies stay external so they resolve from node_modules and
   // keep their own licences and update path. Only @browser-review/shared, which
   // is never published, is pulled in.
-  external: Object.keys(pkg.dependencies ?? {}),
+  // `playwright` is an optional extra that review_screenshot probes for at
+  // runtime; it must stay an import esbuild does not try to resolve.
+  external: [...Object.keys(pkg.dependencies ?? {}), "playwright"],
   banner: { js: "#!/usr/bin/env node" },
   define: { __BROWSER_REVIEW_VERSION__: JSON.stringify(pkg.version) },
 });
