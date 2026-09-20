@@ -92,13 +92,21 @@ export function injectOverlay(html: string, scriptUrl: string, config: unknown):
     `<script src="${escapeAttr(scriptUrl)}" defer ` +
     `data-browser-review="${escapeAttr(JSON.stringify(config))}"></script>`;
 
-  const closingBody = html.toLowerCase().lastIndexOf("</body>");
-  if (closingBody !== -1) {
-    return html.slice(0, closingBody) + tag + html.slice(closingBody);
-  }
-  const closingHtml = html.toLowerCase().lastIndexOf("</html>");
-  if (closingHtml !== -1) {
-    return html.slice(0, closingHtml) + tag + html.slice(closingHtml);
-  }
-  return html + tag;
+  // Use parser locations: strings and trailing comments can contain a fake
+  // closing tag, and inserting there would hide the loader inside that text.
+  const document = parse<DefaultTreeAdapterMap>(html, { sourceCodeLocationInfo: true });
+  let bodyEnd: number | undefined;
+  let htmlEnd: number | undefined;
+  const visit = (node: Node): void => {
+    if (isElement(node)) {
+      const offset = node.sourceCodeLocation?.endTag?.startOffset;
+      if (node.tagName === "body") bodyEnd = offset;
+      if (node.tagName === "html") htmlEnd = offset;
+    }
+    const children = (node as { childNodes?: Node[] }).childNodes;
+    if (children) for (const child of children) visit(child);
+  };
+  visit(document);
+  const offset = bodyEnd ?? htmlEnd ?? html.length;
+  return html.slice(0, offset) + tag + html.slice(offset);
 }

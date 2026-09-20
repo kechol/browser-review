@@ -57,3 +57,11 @@ describe("parseTarget", () => {
     expect(() => parseTarget("missing.html", dir)).toThrow(/no such file/);
   });
 });
+
+it("preserves a root query, fragment and IPv6 loopback target", () => {
+  expect(parseTarget("http://[::1]:5173/?tab=users#heading", dir)).toEqual({
+    mode: "proxy",
+    target: "http://[::1]:5173",
+    entryPath: "/?tab=users#heading",
+  });
+});

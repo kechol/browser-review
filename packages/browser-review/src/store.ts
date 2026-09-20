@@ -96,8 +96,11 @@ export async function updateSessionFile(
   try {
     const current = await readSessionFile(id);
     if (!current) throw new Error(`no session ${id}`);
+    const before = JSON.stringify(current);
     await mutate(current);
-    await writeAtomic(sessionPath(id), `${JSON.stringify(current, null, 2)}\n`);
+    if (JSON.stringify(current) !== before) {
+      await writeAtomic(sessionPath(id), `${JSON.stringify(current, null, 2)}\n`);
+    }
     return current;
   } finally {
     await release();
@@ -175,6 +178,9 @@ export async function takeDeliverable(sessionId: string): Promise<Annotation[]> 
     for (const annotation of file.annotations) {
       if (annotation.status === "pending") {
         annotation.status = "acknowledged";
+        for (const q of annotation.questions) {
+          if (q.from === "human") q.delivered = true;
+        }
         out.push(annotation);
         continue;
       }

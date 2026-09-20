@@ -57,3 +57,10 @@ describe("injectOverlay", () => {
     expect(injectOverlay("<p>x</p>", "/o.js", {})).toContain("<script");
   });
 });
+
+it("inserts before the real body ending, not a closing tag in a trailing comment", () => {
+  const html = "<html><body><h1>Page</h1></body></html><!-- </body> -->";
+  const out = injectOverlay(html, "/overlay.js", {});
+  expect(out.indexOf('<script src="/overlay.js"')).toBeLessThan(out.indexOf("</body>"));
+  expect(out).toContain("<!-- </body> -->");
+});

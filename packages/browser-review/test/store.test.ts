@@ -179,3 +179,26 @@ describe("sweepStaleSessions", () => {
     expect(left).toEqual(["01JJJ", "01KKK"]);
   });
 });
+
+it("does not rewrite the session while polling an empty inbox", async () => {
+  await writeSessionFile(session("POLL"));
+  const file = path.join(tmp, "browser-review", "sessions", "POLL.json");
+  const before = await fs.stat(file);
+  await takeDeliverable("POLL");
+  expect((await fs.stat(file)).mtimeMs).toBe(before.mtimeMs);
+});
+
+it("delivers an answer on a pending annotation exactly once", async () => {
+  await writeSessionFile(session("ANSWER"));
+  await updateSessionFile("ANSWER", (file) => {
+    const annotation = createAnnotation("ANSWER", draft("question"));
+    annotation.questions.push({ from: "human", text: "answer", at: new Date().toISOString() });
+    file.annotations.push(annotation);
+  });
+  expect(await takeDeliverable("ANSWER")).toHaveLength(1);
+  expect(await takeDeliverable("ANSWER")).toHaveLength(0);
+});
+
+it("rejects traversal through a session reference", async () => {
+  await expect(readSessionFile("../outside")).rejects.toThrow("invalid session id");
+});

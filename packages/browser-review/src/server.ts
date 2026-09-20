@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
+import { randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import http from "node:http";
+import type { Duplex } from "node:stream";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import chokidar, { type FSWatcher } from "chokidar";
@@ -24,6 +26,7 @@ import {
   classifyOrigin,
   contentTypeFor,
   hostIsLoopback,
+  LOOPBACK_HOSTS,
   readJsonBody,
   send,
   sendJson,
@@ -89,8 +92,12 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
     );
   });
 
-  const staticRoot = opts.mode === "html-file" ? path.dirname(opts.target) : "";
+  const staticRoot = opts.mode === "html-file" ? await fs.realpath(path.dirname(opts.target)) : "";
   const upstream = opts.mode === "proxy" ? new URL(opts.target) : null;
+  if (upstream && (upstream.protocol !== "http:" || !LOOPBACK_HOSTS.has(upstream.hostname))) {
+    throw new Error("proxy upstream must use HTTP on loopback");
+  }
+  const proxySockets = new Set<Duplex>();
 
   const server = http.createServer();
   await new Promise<void>((resolve, reject) => {
@@ -104,6 +111,14 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
   const address = server.address();
   const port = typeof address === "object" && address ? address.port : opts.port;
   const selfOrigin = `http://127.0.0.1:${port}`;
+  // Application cookies never authorize control endpoints. Names include the
+  // port because browser cookies themselves are not isolated by port.
+  const appCookieName = `br_app_${port}`;
+  const appToken = randomBytes(24).toString("base64url");
+  const hasAppCookie = (req: http.IncomingMessage) =>
+    (req.headers.cookie ?? "")
+      .split(";")
+      .some((part) => part.trim() === `${appCookieName}=${appToken}`);
 
   const session: Session = {
     id: opts.id,
@@ -116,7 +131,6 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
     createdAt: new Date().toISOString(),
     ...(opts.entryPath ? { entryPath: opts.entryPath } : {}),
   };
-  await writeSessionFile({ session, annotations: [] });
 
   // Probed once: absent unless Playwright happens to be installed alongside.
   const screenshot = await createScreenshotter(session);
@@ -142,6 +156,7 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
         overlayUrl: `${controlBase}/overlay.js`,
         overlayConfig,
         onWarning: warn,
+        appCookieName,
       }
     : null;
 
@@ -168,14 +183,20 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
 
   const readHtml = async (file: string): Promise<string> => {
     const raw = await fs.readFile(file, "utf8");
-    const rel = path.relative(opts.projectDir, file) || path.basename(file);
+    const projectRoot = await fs.realpath(opts.projectDir);
+    const rel = path.relative(projectRoot, file) || path.basename(file);
     const instrumented = instrumentHtml(raw, rel);
     return injectOverlay(instrumented, `${controlBase}/overlay.js`, overlayConfig);
   };
 
   const serveStatic = async (res: http.ServerResponse, rest: string): Promise<void> => {
     const relative = rest === "" || rest === "/" ? path.basename(opts.target) : rest.slice(1);
-    const resolved = path.resolve(staticRoot, decodeURIComponent(relative));
+    let resolved: string;
+    try {
+      resolved = await fs.realpath(path.resolve(staticRoot, decodeURIComponent(relative)));
+    } catch {
+      return sendNotFound(res);
+    }
     const root = path.resolve(staticRoot);
     if (resolved !== root && !resolved.startsWith(root + path.sep)) return sendNotFound(res);
 
@@ -185,9 +206,9 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
     } catch {
       return sendNotFound(res);
     }
-    if (stat.isDirectory()) return sendNotFound(res);
+    if (!stat.isFile()) return sendNotFound(res);
 
-    const ext = path.extname(resolved);
+    const ext = path.extname(resolved).toLowerCase();
     if (ext === ".html" || ext === ".htm") {
       return send(res, 200, await readHtml(resolved), { "content-type": contentTypeFor(ext) });
     }
@@ -342,9 +363,20 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
         if (!hostIsLoopback(req)) return sendNotFound(res);
         const url = new URL(req.url ?? "/", selfOrigin);
         if (url.pathname !== basePath && !url.pathname.startsWith(`${basePath}/`)) {
+          if (
+            proxyOptions &&
+            !url.pathname.startsWith("/r/") &&
+            hasAppCookie(req) &&
+            classifyOrigin(req, port) !== "foreign"
+          ) {
+            return proxyRequest(req, res, url.pathname + url.search, proxyOptions);
+          }
           return sendNotFound(res);
         }
         const rest = url.pathname.slice(basePath.length);
+        if (rest === "") {
+          return send(res, 302, "", { location: `${basePath}/${url.search}` });
+        }
 
         if (rest === `/${CONTROL_PREFIX}` || rest.startsWith(`/${CONTROL_PREFIX}/`)) {
           const route = rest.slice(`/${CONTROL_PREFIX}`.length) || "/";
@@ -353,6 +385,11 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
         }
 
         if (proxyOptions) {
+          if (classifyOrigin(req, port) === "foreign") return sendNotFound(res);
+          res.setHeader(
+            "set-cookie",
+            `${appCookieName}=${appToken}; HttpOnly; SameSite=Strict; Path=/`,
+          );
           const upstreamPath = (rest === "" ? "/" : rest) + url.search;
           return proxyRequest(req, res, upstreamPath, proxyOptions);
         }
@@ -367,7 +404,7 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
 
   /* ------------------------------------------------------------ websocket --- */
 
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 });
 
   wss.on("connection", (socket: WebSocket) => {
     sockets.add(socket);
@@ -378,6 +415,7 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
         annotations: file?.annotations ?? [],
         mode: opts.mode,
       };
+      if (socket.readyState !== socket.OPEN) return;
       socket.send(JSON.stringify(init));
       // Agent questions are considered delivered once a browser has them.
       await updateSessionFile(opts.id, (current) => {
@@ -387,7 +425,7 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
           }
         }
       }).catch(() => undefined);
-    })();
+    })().catch(() => socket.close(1011, "Unable to load review"));
 
     socket.on("message", (raw) => {
       void (async () => {
@@ -397,7 +435,14 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
         } catch {
           return;
         }
+        if (!message || typeof message !== "object" || Array.isArray(message)) return;
         if (message.type === "annotate") {
+          if (
+            !message.annotation ||
+            typeof message.annotation !== "object" ||
+            Array.isArray(message.annotation)
+          )
+            return;
           const annotation = createAnnotation(opts.id, message.annotation);
           if (annotation.comment === "") return;
           await updateSessionFile(opts.id, (current) => {
@@ -405,6 +450,12 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
           });
           events.emit("annotation", annotation);
         } else if (message.type === "answer") {
+          if (
+            typeof message.id !== "string" ||
+            typeof message.text !== "string" ||
+            !message.text.trim()
+          )
+            return;
           const updated = await updateSessionFile(opts.id, (current) => {
             const annotation = current.annotations.find((a) => a.id === message.id);
             if (!annotation) return;
@@ -418,7 +469,7 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
           const annotation = updated?.annotations.find((a) => a.id === message.id);
           if (annotation) events.emit("annotation", annotation);
         }
-      })();
+      })().catch(() => socket.close(1011, "Unable to save review"));
     });
 
     socket.on("close", () => sockets.delete(socket));
@@ -427,14 +478,31 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
 
   server.on("upgrade", (req, socket, head) => {
     if (!hostIsLoopback(req)) return socket.destroy();
-    const url = new URL(req.url ?? "/", selfOrigin);
+    let url: URL;
+    try {
+      url = new URL(req.url ?? "/", selfOrigin);
+    } catch {
+      return socket.destroy();
+    }
     if (url.pathname === `${controlBase}/ws`) {
       if (classifyOrigin(req, port) !== "same-origin") return socket.destroy();
       wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
       return;
     }
-    if (proxyOptions && url.pathname.startsWith(`${basePath}/`)) {
-      const upstreamPath = url.pathname.slice(basePath.length) + url.search;
+    if (
+      proxyOptions &&
+      classifyOrigin(req, port) === "same-origin" &&
+      !url.pathname.startsWith(`/${CONTROL_PREFIX}`) &&
+      !url.pathname.startsWith(`${controlBase}/`) &&
+      (url.pathname.startsWith(`${basePath}/`) ||
+        (!url.pathname.startsWith("/r/") && hasAppCookie(req)))
+    ) {
+      const upstreamPath =
+        (url.pathname.startsWith(`${basePath}/`)
+          ? url.pathname.slice(basePath.length)
+          : url.pathname) + url.search;
+      proxySockets.add(socket);
+      socket.once("close", () => proxySockets.delete(socket));
       return proxyUpgrade(req, socket, head, upstreamPath || "/", proxyOptions);
     }
     socket.destroy();
@@ -477,6 +545,7 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
     }
     snapshot = next;
   };
+  await writeSessionFile({ session, annotations: [] });
   await refreshFromDisk();
 
   // Watch the directory rather than the file: every write replaces the inode.
@@ -499,8 +568,10 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
     clearInterval(pollTimer);
     for (const client of sseClients) client.end();
     sseClients.clear();
-    for (const socket of sockets) socket.close();
+    for (const socket of sockets) socket.terminate();
     sockets.clear();
+    for (const socket of proxySockets) socket.destroy();
+    proxySockets.clear();
     wss.close();
     await Promise.all(watchers.map((w) => w.close()));
     await delivery.close();

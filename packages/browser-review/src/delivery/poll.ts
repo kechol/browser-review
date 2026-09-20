@@ -14,6 +14,7 @@ import type { Delivery } from "./index.js";
 const POLL_INTERVAL_MS = 500;
 
 export class PollDelivery implements Delivery {
+  #closed = false;
   #watcher: FSWatcher | null = null;
   #waiters = new Set<() => void>();
 
@@ -45,12 +46,14 @@ export class PollDelivery implements Delivery {
     timeoutMs: number,
     signal?: AbortSignal,
   ): Promise<Annotation[]> {
+    if (this.#closed || signal?.aborted) return [];
     const budget = Math.max(0, Math.min(timeoutMs, REVIEW_WAIT_MAX_MS));
     const deadline = Date.now() + budget;
     this.#ensureWatcher();
     let stamp = await sessionFileStamp(sessionId);
 
     for (;;) {
+      if (this.#closed || signal?.aborted) return [];
       const taken = await takeDeliverable(sessionId);
       if (taken.length > 0) return taken;
       if (signal?.aborted || Date.now() >= deadline) return [];
@@ -73,6 +76,7 @@ export class PollDelivery implements Delivery {
         done = true;
         this.#waiters.delete(finish);
         clearInterval(timer);
+        clearTimeout(timeout);
         signal?.removeEventListener("abort", finish);
         resolve();
       };
@@ -82,8 +86,10 @@ export class PollDelivery implements Delivery {
           if (now !== stamp) finish();
         });
       }, POLL_INTERVAL_MS);
+      const timeout = setTimeout(finish, Math.max(0, deadline - Date.now()));
       this.#waiters.add(finish);
       signal?.addEventListener("abort", finish, { once: true });
+      if (this.#closed || signal?.aborted) finish();
     });
   }
 
@@ -93,6 +99,7 @@ export class PollDelivery implements Delivery {
   }
 
   async close(): Promise<void> {
+    this.#closed = true;
     this.#wake();
     this.#waiters.clear();
     await this.#watcher?.close();

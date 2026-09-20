@@ -5,7 +5,8 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import WebSocket from "ws";
+import WebSocket, { WebSocketServer } from "ws";
+import { gzipSync } from "node:zlib";
 
 let stateHome: string;
 let pageDir: string;
@@ -27,6 +28,18 @@ beforeAll(async () => {
   );
 
   upstream = http.createServer((req, res) => {
+    if (req.url === "/compressed") {
+      res.writeHead(200, {
+        "content-type": "text/html",
+        "content-encoding": "gzip",
+        etag: '"original"',
+      });
+      return res.end(gzipSync("<html><body>Compressed fixture</body></html>"));
+    }
+    if (req.url === "/cookies") {
+      res.writeHead(200, { "content-type": "application/json", "set-cookie": "app=ok; Path=/" });
+      return res.end(JSON.stringify({ cookie: req.headers.cookie ?? "" }));
+    }
     if (req.url === "/go") {
       res.writeHead(302, { location: `http://127.0.0.1:${upstreamPort}/there` });
       return res.end();
@@ -257,6 +270,18 @@ describe("proxy mode", () => {
       expect(html).toContain("__br/overlay.js");
       expect(page.headers.get("content-security-policy")).toBeNull();
 
+      const compressed = await fetch(`${base}/compressed`);
+      const decoded = await compressed.text();
+      expect(decoded).toContain("Compressed fixture");
+      expect(decoded).toContain("__br/overlay.js");
+      expect(compressed.headers.get("content-encoding")).toBeNull();
+      expect(compressed.headers.get("etag")).toBeNull();
+      const cookies = await fetch(`${base}/cookies`, {
+        headers: { cookie: "br_app_123=private; app=visible" },
+      });
+      expect(await cookies.json()).toEqual({ cookie: "app=visible" });
+      expect(cookies.headers.get("set-cookie")).toContain("app=ok");
+      expect(cookies.headers.get("set-cookie")).toContain("br_app_");
       const json = await fetch(`${base}/data.json`);
       expect(json.headers.get("content-type")).toContain("application/json");
       expect(await json.text()).toBe('{"ok":true}');
@@ -269,4 +294,146 @@ describe("proxy mode", () => {
       await running.close();
     }
   });
+});
+
+it("rejects symlinks escaping the static root and malformed paths", async () => {
+  const outside = path.join(stateHome, "secret.txt");
+  await fs.writeFile(outside, "private fixture");
+  await fs.symlink(outside, path.join(pageDir, "escape.txt"));
+  const { running, base } = await startHtmlSession();
+  try {
+    expect((await fetch(`${base}/escape.txt`)).status).toBe(404);
+    expect((await fetch(`${base}/%FF`)).status).toBe(404);
+    expect((await fetch(base, { redirect: "manual" })).headers.get("location")).toMatch(/\/$/);
+  } finally {
+    await running.close();
+  }
+});
+
+it("ignores malformed websocket messages and accepts the next valid comment", async () => {
+  const { running, base, origin } = await startHtmlSession();
+  const socket = new WebSocket(`${base}/__br/ws`.replace("http", "ws"), { origin });
+  try {
+    await new Promise((resolve, reject) => {
+      socket.once("open", resolve);
+      socket.once("error", reject);
+    });
+    for (const message of [
+      "null",
+      "[]",
+      "{",
+      '{"type":"annotate"}',
+      '{"type":"annotate","annotation":null}',
+      '{"type":"answer","text":{}}',
+    ])
+      socket.send(message);
+    socket.send(JSON.stringify({ type: "annotate", annotation: { comment: "Still alive" } }));
+    await expect
+      .poll(async () => {
+        const res = await fetch(`${base}/__br/pending`);
+        return ((await res.json()) as { annotations: unknown[] }).annotations.length;
+      })
+      .toBe(1);
+  } finally {
+    socket.terminate();
+    await running.close();
+  }
+});
+
+it("authenticates root-relative proxy assets without exposing control routes", async () => {
+  const tok = token();
+  const running = await startReviewServer({
+    id: `ROOT${Date.now()}`,
+    token: tok,
+    mode: "proxy",
+    target: `http://127.0.0.1:${upstreamPort}`,
+    projectDir: pageDir,
+    port: 0,
+  });
+  const origin = `http://127.0.0.1:${running.session.port}`;
+  try {
+    expect((await fetch(`${origin}/data.json`)).status).toBe(404);
+    const res = await fetch(`${origin}/r/${tok}/`);
+    const cookie = res.headers.get("set-cookie")!;
+    expect(cookie).toContain("HttpOnly; SameSite=Strict");
+    const headers = { cookie: cookie.split(";")[0]! };
+    expect(await (await fetch(`${origin}/data.json`, { headers })).json()).toEqual({ ok: true });
+    expect((await fetch(`${origin}/r/wrong/__br/annotations`, { headers })).status).toBe(404);
+    expect(
+      (
+        await fetch(`${origin}/data.json`, {
+          headers: { ...headers, origin: "http://foreign.example" },
+        })
+      ).status,
+    ).toBe(404);
+  } finally {
+    await running.close();
+  }
+});
+
+it("tunnels root-relative HMR sockets only with application authentication", async () => {
+  const echo = new WebSocketServer({ server: upstream });
+  echo.on("connection", (socket) => socket.on("message", (data) => socket.send(data)));
+  const tok = token();
+  const running = await startReviewServer({
+    id: `WS${Date.now()}`,
+    token: tok,
+    mode: "proxy",
+    target: `http://127.0.0.1:${upstreamPort}`,
+    projectDir: pageDir,
+    port: 0,
+  });
+  const origin = `http://127.0.0.1:${running.session.port}`;
+  const response = await fetch(`${origin}/r/${tok}/`);
+  const cookie = response.headers.get("set-cookie")!.split(";")[0]!;
+  const socket = new WebSocket(`${origin.replace("http", "ws")}/hmr`, {
+    origin,
+    headers: { cookie },
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      socket.once("open", resolve);
+      socket.once("error", reject);
+    });
+    const received = new Promise<string>((resolve) =>
+      socket.once("message", (data) => resolve(String(data))),
+    );
+    socket.send("HMR fixture");
+    expect(await received).toBe("HMR fixture");
+    const rejected = await new Promise<boolean>((resolve) => {
+      const foreign = new WebSocket(`${origin.replace("http", "ws")}/hmr`, {
+        origin: "http://foreign.example",
+        headers: { cookie },
+      });
+      foreign.once("error", () => resolve(true));
+      foreign.once("open", () => {
+        foreign.terminate();
+        resolve(false);
+      });
+    });
+    expect(rejected).toBe(true);
+  } finally {
+    socket.terminate();
+    for (const client of echo.clients) client.terminate();
+    await new Promise<void>((resolve) => echo.close(() => resolve()));
+    await running.close();
+  }
+});
+
+it("serves MCP status and a zero-timeout wait through the actual HTTP transport", async () => {
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { StreamableHTTPClientTransport } =
+    await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
+  const { running, base } = await startHtmlSession();
+  const client = new Client({ name: "regression-test", version: "1" });
+  try {
+    await client.connect(new StreamableHTTPClientTransport(new URL(`${base}/__br/mcp`)));
+    const status = await client.callTool({ name: "review_status", arguments: {} });
+    expect(JSON.stringify(status)).toContain("html-file");
+    const wait = await client.callTool({ name: "review_wait", arguments: { timeoutMs: 0 } });
+    expect(JSON.stringify(wait)).toContain("No new annotations");
+  } finally {
+    await client.close();
+    await running.close();
+  }
 });

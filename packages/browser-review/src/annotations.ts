@@ -23,8 +23,8 @@ function num(value: unknown): number {
  */
 export function stripValueAttributes(html: string): string {
   return html
-    .replace(/\svalue\s*=\s*"[^"]*"/gi, ' value="…"')
-    .replace(/\svalue\s*=\s*'[^']*'/gi, ' value="…"')
+    .replace(/\svalue\s*=\s*"[^"]*(?:"|$)/gi, ' value="…"')
+    .replace(/\svalue\s*=\s*'[^']*(?:'|$)/gi, ' value="…"')
     .replace(/\svalue\s*=\s*[^\s">]+/gi, ' value="…"');
 }
 

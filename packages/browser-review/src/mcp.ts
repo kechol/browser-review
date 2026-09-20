@@ -127,11 +127,12 @@ export function createMcpServer(ctx: ToolContext): McpServer {
           ),
       },
     },
-    async ({ timeoutMs }) =>
+    async ({ timeoutMs }, extra) =>
       withSession(async (file) => {
         const waited = await ctx.delivery.waitForPending(
           file.session.id,
           timeoutMs ?? REVIEW_WAIT_DEFAULT_MS,
+          extra.signal,
         );
         if (waited.length === 0) {
           return text(

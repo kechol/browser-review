@@ -17,6 +17,7 @@ export const STYLES = `
   all: unset; cursor: pointer; padding: 7px 12px; border-radius: 999px;
   font-size: 13px; font-weight: 500; color: #f3f4f6; white-space: nowrap;
 }
+button:focus-visible { outline: 2px solid #60a5fa; outline-offset: 2px; }
 .toolbar button:hover { background: #2a2e37; }
 .toolbar button[data-on="true"] { background: #3b82f6; color: #fff; }
 .toolbar .count { font-variant-numeric: tabular-nums; opacity: 0.75; padding: 0 2px; }
@@ -94,7 +95,7 @@ button.ghost:hover { background: #f3f4f6; }
   background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
   box-shadow: 0 12px 32px rgb(0 0 0 / 0.22); padding: 8px;
 }
-.panel .item { padding: 8px; border-radius: 6px; cursor: pointer; display: flex; gap: 8px; align-items: flex-start; }
+.panel .item { width: 100%; text-align: left; border: 0; background: transparent; font-size: 13px; padding: 8px; border-radius: 6px; cursor: pointer; display: flex; gap: 8px; align-items: flex-start; }
 .panel .item:hover { background: #f3f4f6; }
 .panel .swatch { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex: none; background: #f59e0b; }
 .panel .item[data-status="acknowledged"] .swatch { background: #3b82f6; }

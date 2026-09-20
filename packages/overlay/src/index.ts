@@ -7,7 +7,7 @@ import type {
   SessionMode,
 } from "@browser-review/shared";
 import { OUTER_HTML_HEAD_LIMIT } from "@browser-review/shared";
-import { collectSourceHints, uniqueSelector } from "./hints.js";
+import { collectSourceHints, uniqueSelector, reviewText } from "./hints.js";
 import { STYLES } from "./styles.js";
 
 interface OverlayConfig {
@@ -123,8 +123,10 @@ function start(cfg: OverlayConfig): void {
     });
   }
 
-  function send(message: ClientMessage): void {
-    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+  function send(message: ClientMessage): boolean {
+    if (socket?.readyState !== WebSocket.OPEN) return false;
+    socket.send(JSON.stringify(message));
+    return true;
   }
 
   connect();
@@ -185,7 +187,7 @@ function start(cfg: OverlayConfig): void {
       if (attr.name === "value") clone.removeAttribute(attr.name);
     }
     const open = clone.outerHTML.replace(/<\/[a-z0-9-]+>$/i, "");
-    const inner = (target.textContent ?? "").replace(/\s+/g, " ").trim();
+    const inner = reviewText(target);
     return `${open}${inner}`.slice(0, OUTER_HTML_HEAD_LIMIT);
   }
 
@@ -226,8 +228,8 @@ function start(cfg: OverlayConfig): void {
         element: { outerHtmlHead: outerHtmlHead(target), tag: target.tagName.toLowerCase() },
         sourceHints: hints,
       };
-      send({ type: "annotate", annotation: draft });
-      closeComposer();
+      if (send({ type: "annotate", annotation: draft })) closeComposer();
+      else spacer.textContent = "Disconnected. Wait for reconnection, then retry.";
     };
     submit.addEventListener("click", commit);
     cancel.addEventListener("click", closeComposer);
@@ -257,7 +259,8 @@ function start(cfg: OverlayConfig): void {
 
       let pin = pins.get(annotation.id);
       if (!pin) {
-        pin = el("div", "pin");
+        pin = el("button", "pin");
+        (pin as HTMLButtonElement).type = "button";
         pin.addEventListener("click", (event) => {
           event.stopPropagation();
           const current = annotations.get(annotation.id);
@@ -273,6 +276,7 @@ function start(cfg: OverlayConfig): void {
         annotation.status === "resolved" && annotation.resolution
           ? annotation.resolution.summary
           : annotation.comment;
+      pin.setAttribute("aria-label", `Comment ${index}: ${pin.title}`);
       pin.style.left = `${rect.left + window.scrollX - 11}px`;
       pin.style.top = `${rect.top + window.scrollY - 11}px`;
     }
@@ -294,6 +298,10 @@ function start(cfg: OverlayConfig): void {
   /* ------------------------------------------------------------------ card --- */
 
   function showCard(annotation: Annotation): void {
+    const oldArea =
+      openCard?.dataset["for"] === annotation.id ? openCard.querySelector("textarea") : null;
+    const draft = oldArea?.value ?? "";
+    const hadFocus = !!oldArea && root.activeElement === oldArea;
     openCard?.remove();
     const rect = locate(annotation);
     const card = el("div", "card");
@@ -333,6 +341,7 @@ function start(cfg: OverlayConfig): void {
     if (openQuestion(annotation)) {
       const area = document.createElement("textarea");
       area.placeholder = "Answer the agent…";
+      area.value = draft;
       const row = el("div", "row");
       const reply = el("button", "primary") as HTMLButtonElement;
       reply.textContent = "Reply";
@@ -341,8 +350,7 @@ function start(cfg: OverlayConfig): void {
       reply.addEventListener("click", () => {
         const answer = area.value.trim();
         if (answer === "") return;
-        send({ type: "answer", id: annotation.id, text: answer });
-        area.value = "";
+        if (send({ type: "answer", id: annotation.id, text: answer })) area.value = "";
       });
     }
 
@@ -362,6 +370,7 @@ function start(cfg: OverlayConfig): void {
     });
     root.append(card);
     openCard = card;
+    if (hadFocus) card.querySelector("textarea")?.focus();
   }
 
   /* ----------------------------------------------------------------- panel --- */
@@ -377,7 +386,8 @@ function start(cfg: OverlayConfig): void {
       return;
     }
     for (const annotation of rows) {
-      const item = el("div", "item");
+      const item = el("button", "item");
+      (item as HTMLButtonElement).type = "button";
       item.dataset["status"] = annotation.status;
       const swatch = el("span", "swatch");
       const body = el("div", "body");
@@ -413,6 +423,7 @@ function start(cfg: OverlayConfig): void {
     annotating = on;
     toggle.dataset["on"] = String(on);
     if (!on) {
+      marqueeStart = null;
       hovered = null;
       hide(highlight, label, marquee);
     }

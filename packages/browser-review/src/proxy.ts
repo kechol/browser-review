@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 import http from "node:http";
 import net from "node:net";
+import { brotliDecompressSync, unzipSync } from "node:zlib";
+
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import { injectOverlay } from "./instrument.js";
 import { send } from "./http-util.js";
+
+const MAX_HTML_BYTES = 16 * 1024 * 1024;
 
 /** Headers that describe a single hop and must not be forwarded. */
 const HOP_BY_HOP = new Set([
@@ -26,14 +30,26 @@ export interface ProxyOptions {
   overlayUrl: string;
   overlayConfig: unknown;
   onWarning: (message: string) => void;
+  appCookieName?: string;
 }
 
-function filterRequestHeaders(headers: IncomingMessage["headers"], upstream: URL) {
+function filterRequestHeaders(
+  headers: IncomingMessage["headers"],
+  upstream: URL,
+  cookieName?: string,
+) {
   const out: Record<string, string | string[]> = {};
   for (const [key, value] of Object.entries(headers)) {
     if (value === undefined) continue;
     if (HOP_BY_HOP.has(key)) continue;
-    out[key] = value;
+    if (key === "cookie" && typeof value === "string") {
+      out[key] = value
+        .split(";")
+        .filter(
+          (part) => !/^br_app_\d+=/.test(part.trim()) && !part.trim().startsWith(`${cookieName}=`),
+        )
+        .join(";");
+    } else out[key] = value;
   }
   out["host"] = upstream.host;
   // Ask for plain bytes: an HTML body has to be readable to have the overlay
@@ -53,10 +69,10 @@ const LOOPBACK_NAMES = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
  * send the browser straight past the overlay.
  */
 export function rewriteLocation(location: string, opts: ProxyOptions): string {
-  if (location.startsWith("/")) return opts.basePath + location;
+  if (location.startsWith("/") && !location.startsWith("//")) return opts.basePath + location;
   let url: URL;
   try {
-    url = new URL(location);
+    url = new URL(location, location.startsWith("//") ? opts.upstream : undefined);
   } catch {
     return location;
   }
@@ -80,17 +96,22 @@ export function proxyRequest(
   const upstreamReq = http.request(
     {
       protocol: opts.upstream.protocol,
-      hostname: opts.upstream.hostname,
+      hostname: opts.upstream.hostname.replace(/^\[|\]$/g, ""),
       port: opts.upstream.port || 80,
       method: req.method,
       path: upstreamPath,
-      headers: filterRequestHeaders(req.headers, opts.upstream),
+      headers: filterRequestHeaders(req.headers, opts.upstream, opts.appCookieName),
     },
     (upstreamRes) => {
       const headers: Record<string, string | string[]> = {};
       for (const [key, value] of Object.entries(upstreamRes.headers)) {
         if (value === undefined || HOP_BY_HOP.has(key)) continue;
         headers[key] = value;
+      }
+
+      const ownCookies = res.getHeader("set-cookie");
+      if (ownCookies && headers["set-cookie"]) {
+        headers["set-cookie"] = [String(ownCookies), ...[headers["set-cookie"]].flat()];
       }
 
       if (typeof headers["location"] === "string") {
@@ -110,28 +131,61 @@ export function proxyRequest(
       }
 
       const contentType = String(upstreamRes.headers["content-type"] ?? "");
-      if (!contentType.includes("text/html")) {
+      upstreamRes.on("error", () => res.destroy());
+      if (
+        req.method === "HEAD" ||
+        upstreamRes.statusCode === 204 ||
+        upstreamRes.statusCode === 304 ||
+        !contentType.toLowerCase().includes("text/html")
+      ) {
         res.writeHead(upstreamRes.statusCode ?? 502, headers);
         upstreamRes.pipe(res);
         return;
       }
 
       const chunks: Buffer[] = [];
-      upstreamRes.on("data", (chunk: Buffer) => chunks.push(chunk));
+      let size = 0;
+      upstreamRes.on("data", (chunk: Buffer) => {
+        size += chunk.byteLength;
+        if (size > MAX_HTML_BYTES) {
+          upstreamRes.destroy();
+          res.destroy();
+          return;
+        }
+        chunks.push(chunk);
+      });
       upstreamRes.on("end", () => {
-        const html = Buffer.concat(chunks).toString("utf8");
+        let bytes = Buffer.concat(chunks);
+        const encoding = String(headers["content-encoding"] ?? "identity").toLowerCase();
+        try {
+          if (encoding === "br")
+            bytes = brotliDecompressSync(bytes, { maxOutputLength: MAX_HTML_BYTES });
+          else if (encoding === "gzip" || encoding === "deflate")
+            bytes = unzipSync(bytes, { maxOutputLength: MAX_HTML_BYTES });
+          else if (encoding !== "identity") throw new Error("unsupported content encoding");
+        } catch {
+          send(res, 502, "browser-review: unable to decode upstream HTML\n");
+          return;
+        }
+        delete headers["content-encoding"];
+        const html = bytes.toString("utf8");
         const injected = injectOverlay(html, opts.overlayUrl, opts.overlayConfig);
         const body = Buffer.from(injected, "utf8");
+        delete headers["etag"];
+        delete headers["content-md5"];
         delete headers["content-length"];
         headers["content-length"] = String(body.byteLength);
         res.writeHead(upstreamRes.statusCode ?? 200, headers);
         res.end(body);
       });
-      upstreamRes.on("error", () => res.destroy());
     },
   );
 
   upstreamReq.on("error", (err) => {
+    if (res.headersSent) {
+      res.destroy();
+      return;
+    }
     send(
       res,
       502,
@@ -160,11 +214,15 @@ export function proxyUpgrade(
 ): void {
   const upstreamReq = http.request({
     protocol: opts.upstream.protocol,
-    hostname: opts.upstream.hostname,
+    hostname: opts.upstream.hostname.replace(/^\[|\]$/g, ""),
     port: opts.upstream.port || 80,
     method: req.method,
     path: upstreamPath,
-    headers: { ...req.headers, host: opts.upstream.host },
+    headers: {
+      ...filterRequestHeaders(req.headers, opts.upstream, opts.appCookieName),
+      connection: "Upgrade",
+      upgrade: req.headers.upgrade ?? "websocket",
+    },
   });
 
   upstreamReq.on("upgrade", (upstreamRes, upstreamSocket: net.Socket, upstreamHead: Buffer) => {
@@ -176,12 +234,20 @@ export function proxyUpgrade(
       .join("\r\n");
     clientSocket.write(`${statusLine}${headerLines}\r\n\r\n`);
     if (upstreamHead?.byteLength) clientSocket.write(upstreamHead);
+    if (head.byteLength) upstreamSocket.write(head);
     upstreamSocket.pipe(clientSocket);
     clientSocket.pipe(upstreamSocket);
     upstreamSocket.on("error", () => clientSocket.destroy());
     clientSocket.on("error", () => upstreamSocket.destroy());
+    clientSocket.on("close", () => upstreamSocket.destroy());
+    upstreamSocket.on("close", () => clientSocket.destroy());
   });
 
   upstreamReq.on("error", () => clientSocket.destroy());
-  upstreamReq.end(head?.byteLength ? head : undefined);
+  upstreamReq.on("response", (response) => {
+    response.resume();
+    clientSocket.destroy();
+  });
+  clientSocket.on("close", () => upstreamReq.destroy());
+  upstreamReq.end();
 }

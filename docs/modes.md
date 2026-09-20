@@ -83,3 +83,17 @@ running.
 Reviewing an application? `proxy`. Add
 [`@browser-review/vite-plugin`](../packages/vite-plugin) if you are on Vite —
 it buys back the exact line numbers that `html-file` mode gets by parsing.
+
+### Root-relative resources
+
+Opening the tokenized review URL sets a session cookie (`HttpOnly`,
+`SameSite=Strict`) for application requests such as `/assets/app.js`, module
+imports, and HMR sockets. It contains a separate random application token,
+never the control token; it is stripped before forwarding to the upstream.
+Requests without that cookie still need the URL token. Control endpoints
+remain exclusively under `/r/<token>/__br/`; the cookie cannot authorize them.
+Cookie names include the review port to keep concurrent sessions separate.
+
+Applications that inspect their initial pathname still see the review prefix.
+Configure the router base accordingly; the proxy does not rewrite application
+JavaScript or emulate the original origin.

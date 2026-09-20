@@ -107,8 +107,12 @@ test("a comment on the headline arrives with the source line attached", async ({
 
 test("a pin appears, and turns green when an agent resolves it", async ({ page }) => {
   await page.goto(session.reviewUrl);
-  const [annotation] = await pending();
-  const pin = page.locator("#browser-review-overlay .pin").first();
+  await annotate(page, "h1.hero-title", "Independent resolution test");
+  await expect
+    .poll(async () => (await pending()).some((a) => a.comment === "Independent resolution test"))
+    .toBe(true);
+  const annotation = (await pending()).find((a) => a.comment === "Independent resolution test")!;
+  const pin = page.locator("#browser-review-overlay .pin").last();
   await expect(pin).toBeVisible();
   await expect(pin).toHaveAttribute("data-status", /pending|acknowledged/);
 

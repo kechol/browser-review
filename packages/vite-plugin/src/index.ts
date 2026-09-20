@@ -81,7 +81,7 @@ export function tagSource(code: string, relPath: string): string {
     .filter(isTaggable)
     .map((node) => ({
       offset: node.name.end as number,
-      text: ` ${ATTR}="${relPath}:${node.loc?.start.line ?? 0}:${(node.loc?.start.column ?? 0) + 1}"`,
+      text: ` ${ATTR}="${relPath.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/\r/g, "&#13;").replace(/\n/g, "&#10;")}:${node.loc?.start.line ?? 0}:${(node.loc?.start.column ?? 0) + 1}"`,
     }))
     .sort((a, b) => b.offset - a.offset);
 
@@ -126,8 +126,8 @@ export default function browserReview(options: BrowserReviewOptions = {}): ViteP
       const relPath = path.relative(root, clean) || path.basename(clean);
       const tagged = tagSource(code, relPath);
       if (tagged === code) return null;
-      // Inserts never add or remove a line, so existing positions still hold
-      // and Vite can keep using the original mapping.
+      // Line numbers are preserved; inserted attributes shift columns.
+      // No column-accurate source map is generated.
       return { code: tagged, map: null };
     },
   };

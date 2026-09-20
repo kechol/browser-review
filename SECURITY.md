@@ -25,7 +25,7 @@ network requests of its own. The threats we design against are therefore local.
 
 Any process running as the same user can reach `127.0.0.1:<port>`.
 
-**Mitigations.** Every route lives under `/r/<token>/`, where the token is 24
+**Mitigations.** Control routes live under `/r/<token>/__br/`, where the token is 24
 random bytes (`crypto.randomBytes(24).toString("base64url")`). A request whose
 token does not match is answered with `404`, not `403`, so the server does not
 confirm that a session exists. Tokens are never written to logs, and the session
@@ -35,6 +35,11 @@ file lives under `$XDG_STATE_HOME/browser-review/` with `0600` permissions.
 read the session file and therefore the token. We consider a local attacker with
 filesystem read access to already be past the boundary this tool defends.
 
+Proxy application resources may also use root-relative paths after opening the
+tokenized URL. These require a separate random application cookie (`HttpOnly`,
+`SameSite=Strict`), stripped before forwarding upstream. This cookie never
+authorizes control routes or another session URL. Foreign Origins are rejected.
+
 ### 2. DNS rebinding / a malicious page in the same browser
 
 A page on an attacker-controlled origin could try to reach the loopback server
@@ -42,7 +47,7 @@ from the victim's browser.
 
 **Mitigations.** WebSocket upgrades and all state-changing `POST` routes check
 the `Origin` header and reject anything that is not the server's own origin. The
-MCP endpoint at `/r/<token>/mcp` rejects any request that carries an `Origin`
+MCP endpoint at `/r/<token>/__br/mcp` rejects any request that carries an `Origin`
 header at all, because legitimate clients are command-line MCP clients. The
 attacker would additionally need the token, which is not guessable and is not
 exposed cross-origin.

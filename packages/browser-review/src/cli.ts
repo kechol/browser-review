@@ -81,7 +81,7 @@ export function parseTarget(raw: string, cwd: string): ParsedTarget {
           "A local dev server is served over http.",
       );
     }
-    if (url.hostname !== "localhost" && url.hostname !== "127.0.0.1" && url.hostname !== "::1") {
+    if (url.hostname !== "localhost" && url.hostname !== "127.0.0.1" && url.hostname !== "[::1]") {
       throw new TargetError(
         `"${url.hostname}" is not a local host. browser-review only proxies ` +
           "http://localhost and http://127.0.0.1, because injecting a review overlay into " +
@@ -89,7 +89,8 @@ export function parseTarget(raw: string, cwd: string): ParsedTarget {
           "run it locally first.",
       );
     }
-    const entryPath = url.pathname === "/" ? "" : url.pathname + url.search;
+    const entryPath =
+      url.pathname === "/" && !url.search && !url.hash ? "" : url.pathname + url.search + url.hash;
     return entryPath
       ? { mode: "proxy", target: url.origin, entryPath }
       : { mode: "proxy", target: url.origin };

@@ -76,14 +76,17 @@ export function uniqueSelector(el: Element): string {
     current &&
     current !== document.body &&
     current !== document.documentElement &&
-    depth < 8
+    depth < 256
   ) {
     const tag = current.tagName.toLowerCase();
 
     const dataAttr = DATA_ATTRS.find((name) => current!.hasAttribute(name));
     if (dataAttr) {
-      parts.unshift(`${tag}[${dataAttr}="${cssEscape(current.getAttribute(dataAttr) ?? "")}"]`);
-      break;
+      const candidate = `${tag}[${dataAttr}="${cssEscape(current.getAttribute(dataAttr) ?? "")}"]`;
+      if (safe(() => document.querySelectorAll(candidate).length === 1)) {
+        parts.unshift(candidate);
+        break;
+      }
     }
     if (current.id && isUniqueId(current.id)) {
       parts.unshift(`#${cssEscape(current.id)}`);
@@ -306,6 +309,16 @@ function fromCssRules(el: Element): SourceHint | null {
 
 /* ------------------------------------------------------- strategy 6: selector */
 
+/** Exclude form and editable content even when their parent is selected. */
+export function reviewText(el: Element): string {
+  const privateContent =
+    'textarea, select, [contenteditable]:not([contenteditable="false"]), script, style, #browser-review-overlay';
+  if (el.closest(privateContent)) return "";
+  const clone = el.cloneNode(true) as Element;
+  for (const child of clone.querySelectorAll(privateContent)) child.remove();
+  return (clone.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
 function fromSelector(el: Element): SourceHint {
   const rect = el.getBoundingClientRect();
   const hint: SourceHint = {
@@ -319,7 +332,7 @@ function fromSelector(el: Element): SourceHint {
     },
     confidence: 0.4,
   };
-  const text = (el.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+  const text = reviewText(el).slice(0, 120);
   if (text) hint.text = text;
   const aria = el.getAttribute("aria-label");
   if (aria) hint.ariaLabel = aria;

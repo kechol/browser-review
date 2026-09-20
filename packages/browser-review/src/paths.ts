@@ -20,6 +20,7 @@ export function sessionsDir(): string {
 }
 
 export function sessionPath(id: string): string {
+  if (!/^[a-zA-Z0-9_-]+$/.test(id)) throw new Error("invalid session id");
   return path.join(sessionsDir(), `${id}.json`);
 }
 

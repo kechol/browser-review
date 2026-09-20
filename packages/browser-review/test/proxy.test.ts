@@ -42,3 +42,8 @@ describe("rewriteLocation", () => {
     expect(rewriteLocation("::::", opts)).toBe("::::");
   });
 });
+
+it("distinguishes protocol-relative redirects from absolute paths", () => {
+  expect(rewriteLocation("//localhost:5173/app", opts)).toBe("http://127.0.0.1:4321/r/tok/app");
+  expect(rewriteLocation("//example.com/app", opts)).toBe("//example.com/app");
+});

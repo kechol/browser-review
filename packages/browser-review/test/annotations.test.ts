@@ -100,3 +100,8 @@ describe("summarizeHint", () => {
     );
   });
 });
+
+it("redacts a quoted value even when the markup was truncated mid-attribute", () => {
+  expect(stripValueAttributes('<input value="secret')).not.toContain("secret");
+  expect(stripValueAttributes("<input value='secret")).not.toContain("secret");
+});

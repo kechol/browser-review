@@ -40,3 +40,10 @@ describe("tagSource", () => {
     expect(tagSource(code, "a.tsx")).toBe(code);
   });
 });
+
+it("escapes filenames so quotes and newlines cannot break JSX", () => {
+  const tagged = tagSource("const A = <div />;", 'a"&\n.tsx');
+  expect(tagged).toContain("a&quot;&amp;&#10;.tsx");
+  expect(tagged.split("\n")).toHaveLength(1);
+  expect(tagSource(tagged, "other.tsx")).toBe(tagged);
+});

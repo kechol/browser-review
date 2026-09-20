@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Browser Review 動作検証</title>
+    <link rel="icon" href="data:," />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #f4f6fa;
+        color: #243047;
+        font:
+          16px/1.6 system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 850px;
+        margin: 50px auto;
+        padding: 24px;
+      }
+      h1 {
+        font-size: 30px;
+      }
+      .cards {
+        display: flex;
+        gap: 24px;
+      }
+      article,
+      .private-fields {
+        background: white;
+        padding: 24px;
+        border: 1px solid #ccd5e1;
+        border-radius: 12px;
+        margin: 20px 0;
+      }
+      button {
+        padding: 12px 22px;
+        border: 0;
+        border-radius: 6px;
+        background: #275bd0;
+        color: white;
+        font-size: 16px;
+      }
+      textarea,
+      input {
+        display: block;
+        width: 100%;
+        padding: 10px;
+        margin: 10px 0;
+      }
+      @media (max-width: 600px) {
+        .cards {
+          display: block;
+        }
+        main {
+          margin: 10px auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Browser Review 動作検証</h1>
+      <p>同じ属性のボタンを選び、コメント・質問・回答・解決を確認します。</p>
+      <div class="cards">
+        <article>
+          <h2>最初のカード</h2>
+          <button data-testid="repeated">最初のボタン</button>
+        </article>
+        <article>
+          <h2>2番目のカード</h2>
+          <button data-testid="repeated">2番目のボタン</button>
+        </article>
+      </div>
+      <section class="private-fields">
+        <h2>フォーム情報の除外</h2>
+        <p>下記はすべて検証用の架空データです。</p>
+        <input aria-label="テスト入力" value="fixture-input-secret" />
+        <textarea aria-label="テストメモ">fixture-textarea-secret</textarea>
+        <div contenteditable="true" aria-label="テスト編集領域">fixture-editable-secret</div>
+      </section>
+      <p id="module-status">静的HTMLモード</p>
+    </main>
+  </body>
+</html>
