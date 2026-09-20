@@ -24,8 +24,20 @@ describe("createAnnotation", () => {
     page: { url: "http://127.0.0.1:1/r/t/", path: "/r/t/", title: "Demo" },
     element: { outerHtmlHead: '<h1 value="leak">Hi</h1>', tag: "H1" },
     sourceHints: [
-      { kind: "selector" as const, value: "h1", bbox: { x: 0, y: 0, width: 1, height: 1 }, confidence: 0.4 },
-      { kind: "loc" as const, file: "a.html", line: 3, col: 2, confidence: 0.95, via: "data-review-src" as const },
+      {
+        kind: "selector" as const,
+        value: "h1",
+        bbox: { x: 0, y: 0, width: 1, height: 1 },
+        confidence: 0.4,
+      },
+      {
+        kind: "loc" as const,
+        file: "a.html",
+        line: 3,
+        col: 2,
+        confidence: 0.95,
+        via: "data-review-src" as const,
+      },
     ],
   };
 
@@ -77,11 +89,14 @@ describe("createAnnotation", () => {
 
 describe("summarizeHint", () => {
   it("renders each kind as one readable line", () => {
-    expect(summarizeHint({ kind: "loc", file: "a.tsx", line: 4, col: 2, confidence: 1, via: "parse5" }))
-      .toBe("a.tsx:4:2 (parse5)");
-    expect(summarizeHint({ kind: "component", chain: ["App", "Button"], confidence: 0.8 }))
-      .toBe("App > Button");
-    expect(summarizeHint({ kind: "data", attrs: { "data-testid": "cta" }, confidence: 0.7 }))
-      .toBe('data-testid="cta"');
+    expect(
+      summarizeHint({ kind: "loc", file: "a.tsx", line: 4, col: 2, confidence: 1, via: "parse5" }),
+    ).toBe("a.tsx:4:2 (parse5)");
+    expect(summarizeHint({ kind: "component", chain: ["App", "Button"], confidence: 0.8 })).toBe(
+      "App > Button",
+    );
+    expect(summarizeHint({ kind: "data", attrs: { "data-testid": "cta" }, confidence: 0.7 })).toBe(
+      'data-testid="cta"',
+    );
   });
 });

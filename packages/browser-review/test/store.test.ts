@@ -15,8 +15,16 @@ afterAll(async () => {
   await fs.rm(tmp, { recursive: true, force: true });
 });
 
-const { ensureDirs, listSessionFiles, readSessionFile, resolveSession, sweepStaleSessions, takeDeliverable, updateSessionFile, writeSessionFile } =
-  await import("../src/store.js");
+const {
+  ensureDirs,
+  listSessionFiles,
+  readSessionFile,
+  resolveSession,
+  sweepStaleSessions,
+  takeDeliverable,
+  updateSessionFile,
+  writeSessionFile,
+} = await import("../src/store.js");
 const { createAnnotation } = await import("../src/annotations.js");
 
 function session(id: string, overrides: Record<string, unknown> = {}) {

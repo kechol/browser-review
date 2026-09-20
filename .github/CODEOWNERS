@@ -1,0 +1,7 @@
+# Default owner for everything in this repository.
+*                       @kechol
+
+# Changes here alter the promises in SECURITY.md; they get a closer look.
+/SECURITY.md            @kechol
+/scripts/               @kechol
+/.github/workflows/     @kechol

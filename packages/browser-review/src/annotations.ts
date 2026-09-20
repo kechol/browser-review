@@ -23,9 +23,9 @@ function num(value: unknown): number {
  */
 export function stripValueAttributes(html: string): string {
   return html
-    .replace(/\svalue\s*=\s*"[^"]*"/gi, " value=\"…\"")
-    .replace(/\svalue\s*=\s*'[^']*'/gi, " value=\"…\"")
-    .replace(/\svalue\s*=\s*[^\s">]+/gi, " value=\"…\"");
+    .replace(/\svalue\s*=\s*"[^"]*"/gi, ' value="…"')
+    .replace(/\svalue\s*=\s*'[^']*'/gi, ' value="…"')
+    .replace(/\svalue\s*=\s*[^\s">]+/gi, ' value="…"');
 }
 
 function sanitizeBbox(value: unknown): Bbox {
@@ -62,7 +62,10 @@ function sanitizeHint(raw: unknown): SourceHint | null {
     }
     case "component": {
       const chain = Array.isArray(h["chain"])
-        ? h["chain"].map((c) => str(c, 128)).filter(Boolean).slice(0, 12)
+        ? h["chain"]
+            .map((c) => str(c, 128))
+            .filter(Boolean)
+            .slice(0, 12)
         : [];
       return chain.length ? { kind: "component", chain, confidence } : null;
     }

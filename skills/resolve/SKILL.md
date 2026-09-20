@@ -37,13 +37,13 @@ commented.
 **For each annotation that arrives, find the code.** Walk `sourceHints` from
 the highest confidence down and stop at the first one that lands:
 
-| hint | what to do |
-|---|---|
-| `loc` | Read that file at that line. This is a direct answer — take it. |
-| `component` | Grep for the last name in the chain, as a component definition. |
-| `data` | Grep for the attribute value, e.g. `data-testid="hero-cta"`. |
-| `css` | Open that stylesheet and find the rule. |
-| `selector` | Last resort. Grep for the distinctive class name, or for the `text` the overlay captured. |
+| hint        | what to do                                                                                |
+| ----------- | ----------------------------------------------------------------------------------------- |
+| `loc`       | Read that file at that line. This is a direct answer — take it.                           |
+| `component` | Grep for the last name in the chain, as a component definition.                           |
+| `data`      | Grep for the attribute value, e.g. `data-testid="hero-cta"`.                              |
+| `css`       | Open that stylesheet and find the rule.                                                   |
+| `selector`  | Last resort. Grep for the distinctive class name, or for the `text` the overlay captured. |
 
 **When you are not sure, ask rather than guess.** If a hint gives you several
 candidates, or none, call `review_ask(id, question)` with a specific question —

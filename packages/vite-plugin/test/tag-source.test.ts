@@ -9,7 +9,7 @@ describe("tagSource", () => {
   });
 
   it("tags a component element too", () => {
-    const code = "const A = () => <Button label=\"x\" />;";
+    const code = 'const A = () => <Button label="x" />;';
     expect(tagSource(code, "src/A.tsx")).toContain('<Button data-review-src="src/A.tsx:1:17"');
   });
 

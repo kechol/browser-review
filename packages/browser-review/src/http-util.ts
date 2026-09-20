@@ -7,11 +7,7 @@ export const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]
 
 /** Origins a browser may legitimately use to reach this server. */
 export function allowedOrigins(port: number): Set<string> {
-  return new Set([
-    `http://127.0.0.1:${port}`,
-    `http://localhost:${port}`,
-    `http://[::1]:${port}`,
-  ]);
+  return new Set([`http://127.0.0.1:${port}`, `http://localhost:${port}`, `http://[::1]:${port}`]);
 }
 
 function hostname(header: string | undefined): string {

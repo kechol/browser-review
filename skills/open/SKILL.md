@@ -43,13 +43,13 @@ Give them, in this order:
 1. **The review URL**, and that they should open it. On macOS you may run
    `open <reviewUrl>` for them; on Linux, `xdg-open <reviewUrl>`. Say what you
    are doing rather than opening a browser silently.
-2. **How to use it**: click *Comment* in the toolbar at the bottom right, then
+2. **How to use it**: click _Comment_ in the toolbar at the bottom right, then
    click any element on the page and type what should change. Shift-drag selects
    a region instead of a single element.
 3. **Where the fixing happens**, which is one of two things:
 
-   - *This session*: run `/browser-review:resolve`.
-   - *Another session*: give them the handoff block below, filled in, to paste
+   - _This session_: run `/browser-review:resolve`.
+   - _Another session_: give them the handoff block below, filled in, to paste
      into the other session. Mention that the other session needs to be started
      in the repository that owns the code.
 

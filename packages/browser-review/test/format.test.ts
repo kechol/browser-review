@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
 import type { Session } from "@browser-review/shared";
-import { editableScope, formatDelivery, isInScope, quoteComment, reviewUrl } from "../src/format.js";
+import {
+  editableScope,
+  formatDelivery,
+  isInScope,
+  quoteComment,
+  reviewUrl,
+} from "../src/format.js";
 import { createAnnotation } from "../src/annotations.js";
 
 const base: Session = {

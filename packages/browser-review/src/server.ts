@@ -249,7 +249,10 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
       return true;
     }
 
-    if ((route === "/resolve" || route === "/ask" || route === "/dismiss") && req.method === "POST") {
+    if (
+      (route === "/resolve" || route === "/ask" || route === "/dismiss") &&
+      req.method === "POST"
+    ) {
       if (origin === "foreign") {
         sendNotFound(res);
         return true;
@@ -303,15 +306,11 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
     return false;
   };
 
-  const handleMcp = async (
-    req: http.IncomingMessage,
-    res: http.ServerResponse,
-  ): Promise<void> => {
+  const handleMcp = async (req: http.IncomingMessage, res: http.ServerResponse): Promise<void> => {
     // Stateless: one server and transport per request, so a long review_wait on
     // one connection cannot block another client.
-    const { StreamableHTTPServerTransport } = await import(
-      "@modelcontextprotocol/sdk/server/streamableHttp.js"
-    );
+    const { StreamableHTTPServerTransport } =
+      await import("@modelcontextprotocol/sdk/server/streamableHttp.js");
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     const mcpServer = createMcpServer({
       resolveSession: sessionContextForId(opts.id),

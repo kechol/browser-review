@@ -36,9 +36,7 @@ function isTaggable(node: JsxOpeningElement): boolean {
   // A fragment has no name to hang an attribute on, and nothing useful to say.
   if (node.name.type === "JSXFragment") return false;
   if (typeof node.name.end !== "number") return false;
-  return !node.attributes.some(
-    (attr) => attr.type === "JSXAttribute" && attr.name?.name === ATTR,
-  );
+  return !node.attributes.some((attr) => attr.type === "JSXAttribute" && attr.name?.name === ATTR);
 }
 
 function walk(node: unknown, found: JsxOpeningElement[]): void {

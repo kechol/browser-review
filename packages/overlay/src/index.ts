@@ -51,8 +51,11 @@ function start(cfg: OverlayConfig): void {
   const dot = el("span", "dot");
   const toggle = el("button") as HTMLButtonElement;
   toggle.textContent = "Comment";
+  // Stable hooks for the end-to-end tests; the visible labels are free to change.
+  toggle.dataset["action"] = "annotate";
   const listButton = el("button") as HTMLButtonElement;
   listButton.textContent = "Comments";
+  listButton.dataset["action"] = "list";
   const count = el("span", "count");
   toolbar.append(dot, toggle, listButton, count);
 
@@ -158,14 +161,6 @@ function start(cfg: OverlayConfig): void {
     return common;
   }
 
-  function moveTo(node: HTMLElement, rect: DOMRect): void {
-    node.style.left = `${rect.left + window.scrollX}px`;
-    node.style.top = `${rect.top + window.scrollY}px`;
-    node.style.width = `${rect.width}px`;
-    node.style.height = `${rect.height}px`;
-    node.style.display = "";
-  }
-
   function showHighlight(target: Element): void {
     const rect = target.getBoundingClientRect();
     moveTo(highlight, rect);
@@ -174,7 +169,7 @@ function start(cfg: OverlayConfig): void {
       hint?.kind === "loc"
         ? `${hint.file}:${hint.line}`
         : hint?.kind === "component"
-          ? hint.chain[0] ?? target.tagName.toLowerCase()
+          ? (hint.chain[0] ?? target.tagName.toLowerCase())
           : uniqueSelector(target);
     label.style.left = `${rect.left + window.scrollX}px`;
     label.style.top = `${rect.top + window.scrollY - 2}px`;
@@ -249,26 +244,6 @@ function start(cfg: OverlayConfig): void {
   }
 
   /* ------------------------------------------------------------------ pins --- */
-
-  function locate(annotation: Annotation): DOMRect | null {
-    const selectorHint = annotation.sourceHints.find((h) => h.kind === "selector");
-    if (selectorHint && selectorHint.kind === "selector") {
-      try {
-        const found = document.querySelector(selectorHint.value);
-        if (found) return found.getBoundingClientRect();
-      } catch {
-        // A selector that no longer parses is no worse than one that no longer matches.
-      }
-      const { bbox } = selectorHint;
-      return new DOMRect(bbox.x - window.scrollX, bbox.y - window.scrollY, bbox.width, bbox.height);
-    }
-    return null;
-  }
-
-  function openQuestion(annotation: Annotation): boolean {
-    const last = annotation.questions[annotation.questions.length - 1];
-    return last?.from === "agent";
-  }
 
   function renderPins(): void {
     const visible = new Set<string>();
@@ -527,13 +502,6 @@ function start(cfg: OverlayConfig): void {
   window.addEventListener("resize", reposition);
 
   /* ----------------------------------------------------------------- utils --- */
-
-  function place(node: HTMLElement, at: { x: number; y: number }): void {
-    const left = Math.min(at.x + window.scrollX, window.scrollX + window.innerWidth - 340);
-    const top = Math.min(at.y + window.scrollY, window.scrollY + window.innerHeight - 200);
-    node.style.left = `${Math.max(window.scrollX + 8, left)}px`;
-    node.style.top = `${Math.max(window.scrollY + 8, top)}px`;
-  }
 }
 
 function el(tag: string, className?: string): HTMLElement {
@@ -553,4 +521,39 @@ function rectBetween(a: { x: number; y: number }, b: { x: number; y: number }): 
     Math.abs(a.x - b.x),
     Math.abs(a.y - b.y),
   );
+}
+
+function moveTo(node: HTMLElement, rect: DOMRect): void {
+  node.style.left = `${rect.left + window.scrollX}px`;
+  node.style.top = `${rect.top + window.scrollY}px`;
+  node.style.width = `${rect.width}px`;
+  node.style.height = `${rect.height}px`;
+  node.style.display = "";
+}
+
+function locate(annotation: Annotation): DOMRect | null {
+  const selectorHint = annotation.sourceHints.find((h) => h.kind === "selector");
+  if (selectorHint && selectorHint.kind === "selector") {
+    try {
+      const found = document.querySelector(selectorHint.value);
+      if (found) return found.getBoundingClientRect();
+    } catch {
+      // A selector that no longer parses is no worse than one that no longer matches.
+    }
+    const { bbox } = selectorHint;
+    return new DOMRect(bbox.x - window.scrollX, bbox.y - window.scrollY, bbox.width, bbox.height);
+  }
+  return null;
+}
+
+function openQuestion(annotation: Annotation): boolean {
+  const last = annotation.questions[annotation.questions.length - 1];
+  return last?.from === "agent";
+}
+
+function place(node: HTMLElement, at: { x: number; y: number }): void {
+  const left = Math.min(at.x + window.scrollX, window.scrollX + window.innerWidth - 340);
+  const top = Math.min(at.y + window.scrollY, window.scrollY + window.innerHeight - 200);
+  node.style.left = `${Math.max(window.scrollX + 8, left)}px`;
+  node.style.top = `${Math.max(window.scrollY + 8, top)}px`;
 }

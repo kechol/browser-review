@@ -1,0 +1,34 @@
+name: Feature request
+description: Suggest something browser-review should do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that is awkward or impossible today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you have in mind
+      description: A sketch is fine. So is "I do not know, but here is the shape of it".
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Design constraints
+      description: >
+        These are not negotiable; a request that needs one of them relaxed will
+        be closed. Please confirm the idea fits.
+      options:
+        - label: It does not require listening on anything but 127.0.0.1.
+          required: true
+        - label: It does not require the tool to make outbound network requests.
+          required: true
+        - label: It does not require writing inside the repository under review.
+          required: true

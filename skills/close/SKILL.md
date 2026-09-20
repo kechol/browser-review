@@ -23,6 +23,6 @@ Afterwards:
 
 - If this session has unreviewed edits from the review loop, remind the user to
   look at the diff before committing.
-- Mention `claude mcp remove review` only if the user connected a *second*
+- Mention `claude mcp remove review` only if the user connected a _second_
   session to the handoff URL by hand. The session that has the plugin installed
   needs nothing removed.

@@ -186,9 +186,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       withSession((file) => {
         const annotation = file.annotations.find((a) => a.id === id);
         if (!annotation) return text(`not_found: no annotation ${id} in this session.`, true);
-        return text(
-          [UNTRUSTED_INPUT_NOTICE, "", formatDetail(annotation)].join("\n"),
-        );
+        return text([UNTRUSTED_INPUT_NOTICE, "", formatDetail(annotation)].join("\n"));
       }),
   );
 

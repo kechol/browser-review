@@ -11,13 +11,34 @@
     "directory": "packages/browser-review"
   },
   "bugs": "https://github.com/kechol/browser-review-plugin/issues",
-  "keywords": ["claude-code", "mcp", "code-review", "browser", "annotation", "localhost"],
+  "keywords": [
+    "claude-code",
+    "mcp",
+    "code-review",
+    "browser",
+    "annotation",
+    "localhost"
+  ],
   "type": "module",
-  "bin": { "browser-review": "./dist/cli.js" },
-  "exports": { ".": "./dist/cli.js" },
-  "files": ["dist", "LICENSE", "NOTICE", "README.md"],
-  "engines": { "node": ">=22" },
-  "os": ["darwin", "linux"],
+  "bin": {
+    "browser-review": "./dist/cli.js"
+  },
+  "exports": {
+    ".": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
   "scripts": {
     "build": "node build.mjs"
   },
@@ -28,5 +49,7 @@
     "ws": "^8.21.3",
     "zod": "^4.6.5"
   },
-  "publishConfig": { "access": "public" }
+  "publishConfig": {
+    "access": "public"
+  }
 }

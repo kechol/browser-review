@@ -80,7 +80,9 @@ const scope =
 
 const shown = pending.slice(0, MAX_ANNOTATIONS);
 const lines = shown.map((annotation) => {
-  const comment = String(annotation.comment ?? "").replace(/\s+/g, " ").trim();
+  const comment = String(annotation.comment ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
   return `- ${annotation.id} at ${where(annotation)}\n  > ${comment}`;
 });
 if (pending.length > shown.length) {

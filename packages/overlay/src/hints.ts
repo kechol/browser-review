@@ -37,7 +37,9 @@ function safe<T>(fn: () => T): T | null {
 }
 
 function cssEscape(value: string): string {
-  return typeof CSS !== "undefined" && CSS.escape ? CSS.escape(value) : value.replace(/["\\]/g, "\\$&");
+  return typeof CSS !== "undefined" && CSS.escape
+    ? CSS.escape(value)
+    : value.replace(/["\\]/g, "\\$&");
 }
 
 function isUniqueId(id: string): boolean {
@@ -70,7 +72,12 @@ export function uniqueSelector(el: Element): string {
   let current: Element | null = el;
   let depth = 0;
 
-  while (current && current !== document.body && current !== document.documentElement && depth < 8) {
+  while (
+    current &&
+    current !== document.body &&
+    current !== document.documentElement &&
+    depth < 8
+  ) {
     const tag = current.tagName.toLowerCase();
 
     const dataAttr = DATA_ATTRS.find((name) => current!.hasAttribute(name));
@@ -140,10 +147,7 @@ function fiberOf(el: Element): Fiber | null {
 
 function componentName(fiber: Fiber): string | null {
   const type = (fiber.type ?? fiber.elementType) as
-    | { displayName?: string; name?: string }
-    | string
-    | null
-    | undefined;
+    { displayName?: string; name?: string } | string | null | undefined;
   if (!type) return null;
   if (typeof type === "string") return null; // a host element, not a component
   return type.displayName ?? type.name ?? null;
@@ -182,8 +186,11 @@ function fromSvelteMeta(el: Element): SourceHint | null {
   let current: Element | null = el;
   let depth = 0;
   while (current && depth < 20) {
-    const meta = (current as unknown as { __svelte_meta?: { loc?: { file?: string; line?: number; column?: number } } })
-      .__svelte_meta;
+    const meta = (
+      current as unknown as {
+        __svelte_meta?: { loc?: { file?: string; line?: number; column?: number } };
+      }
+    ).__svelte_meta;
     if (meta?.loc?.file && typeof meta.loc.line === "number") {
       const hint: SourceHint = {
         kind: "loc",

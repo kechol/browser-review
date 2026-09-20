@@ -88,9 +88,7 @@ describe("html-file mode", () => {
   it("answers 404 for a wrong token rather than admitting the session exists", async () => {
     const { running } = await startHtmlSession();
     try {
-      const res = await fetch(
-        `http://127.0.0.1:${running.session.port}/r/${"x".repeat(32)}/`,
-      );
+      const res = await fetch(`http://127.0.0.1:${running.session.port}/r/${"x".repeat(32)}/`);
       expect(res.status).toBe(404);
     } finally {
       await running.close();
