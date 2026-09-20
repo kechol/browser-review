@@ -1,0 +1,17 @@
+{
+  "description": "Injects pending browser-review annotations into the conversation as context.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/inject-pending.sh",
+            "timeout": 5,
+            "statusMessage": "Checking for browser review comments"
+          }
+        ]
+      }
+    ]
+  }
+}

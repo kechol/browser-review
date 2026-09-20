@@ -1,0 +1,11 @@
+{
+  "name": "browser-review",
+  "displayName": "Browser Review",
+  "version": "0.1.0",
+  "description": "Point at an element in your browser, leave a comment, and have Claude Code find and fix the code behind it. Works on a local HTML file or any localhost dev server.",
+  "author": { "name": "kechol", "url": "https://github.com/kechol" },
+  "homepage": "https://github.com/kechol/browser-review-plugin#readme",
+  "repository": "https://github.com/kechol/browser-review-plugin",
+  "license": "Apache-2.0",
+  "keywords": ["review", "browser", "annotation", "frontend", "localhost", "mcp"]
+}

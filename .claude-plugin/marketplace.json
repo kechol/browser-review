@@ -1,0 +1,20 @@
+{
+  "name": "browser-review",
+  "owner": { "name": "kechol", "url": "https://github.com/kechol" },
+  "description": "Browser-based UI review for Claude Code.",
+  "plugins": [
+    {
+      "name": "browser-review",
+      "source": "./",
+      "displayName": "Browser Review",
+      "description": "Point at an element in your browser, leave a comment, and have Claude Code find and fix the code behind it. Works on a local HTML file or any localhost dev server.",
+      "version": "0.1.0",
+      "author": { "name": "kechol", "url": "https://github.com/kechol" },
+      "homepage": "https://github.com/kechol/browser-review-plugin#readme",
+      "repository": "https://github.com/kechol/browser-review-plugin",
+      "license": "Apache-2.0",
+      "category": "development",
+      "keywords": ["review", "browser", "annotation", "frontend", "localhost", "mcp"]
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+browser-review
+Copyright 2025 browser-review contributors
+
+This product includes software developed as part of the browser-review project
+(https://github.com/kechol/browser-review-plugin), licensed under the Apache
+License, Version 2.0.
+
+browser-review is an independent, third-party project. It is not affiliated
+with, endorsed by, or sponsored by Anthropic PBC. "Claude" and "Claude Code"
+are trademarks of Anthropic PBC and are used here only to describe
+interoperability.
+
+--------------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------------
+
+The published `browser-review` package declares the following runtime
+dependencies. Each is distributed under its own license; the full texts are
+available in the respective packages under node_modules/.
+
+  @modelcontextprotocol/sdk  MIT         Copyright (c) Anthropic, PBC
+  chokidar                   MIT         Copyright (c) 2012-2019 Paul Miller, Elan Shanker
+  parse5                     MIT         Copyright (c) Ivan Nikulin and contributors
+  ws                         MIT         Copyright (c) 2011 Einar Otto Stangvik and contributors
+  zod                        MIT         Copyright (c) 2020 Colin McDonnell
+
+The published `@browser-review/vite-plugin` package has no runtime
+dependencies; `vite` is a peer dependency (MIT).

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "review": {
+      "command": "npx",
+      "args": ["-y", "browser-review@^0.1.0", "mcp", "--session", "latest"]
+    }
+  }
+}
