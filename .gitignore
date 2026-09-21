@@ -13,3 +13,9 @@ test-results/
 playwright-report/
 .DS_Store
 !.node-version
+.output/
+# Copied from the repository root by package prepack hooks.
+/packages/browser-review/LICENSE
+/packages/browser-review/NOTICE
+/packages/vite-plugin/LICENSE
+/packages/vite-plugin/NOTICE

@@ -36,6 +36,7 @@ jobs:
       - run: pnpm run lint
       - run: pnpm run typecheck
       - run: pnpm test
+      - run: pnpm run check:packages
       - run: pnpm run check:versions
       - run: pnpm run check:no-egress
 

@@ -24,5 +24,9 @@ available in the respective packages under node_modules/.
   ws                         MIT         Copyright (c) 2011 Einar Otto Stangvik and contributors
   zod                        MIT         Copyright (c) 2020 Colin McDonnell
 
-The published `@browser-review/vite-plugin` package has no runtime
-dependencies; `vite` is a peer dependency (MIT).
+The published `@browser-review/vite-plugin` package declares the following
+runtime dependency, distributed separately under its own license:
+
+  @babel/parser              MIT         Copyright (c) Babel Contributors
+
+`vite` is a peer dependency (MIT).

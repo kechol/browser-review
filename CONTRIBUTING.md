@@ -50,6 +50,7 @@ pnpm run typecheck      # tsc --build
 pnpm test               # vitest
 pnpm run license-check  # dependency licenses must be MIT / Apache-2.0 / BSD / ISC
 pnpm run check:no-egress # no outbound network targets other than loopback/upstream
+pnpm run check:packages  # built tarballs include the current license, notices and README
 pnpm run check:versions  # plugin.json version matches the published package
 pnpm run test:e2e       # playwright (needs `pnpm exec playwright install chromium` once)
 ```
@@ -88,6 +89,8 @@ tags the release and publishes to npm from GitHub Actions using npm Trusted
 Publishing with `--provenance`. **Nobody publishes from a laptop.** When the
 version of `packages/browser-review` changes, `.claude-plugin/plugin.json` must
 be bumped in the same pull request; `pnpm run check:versions` enforces this.
+
+Before enabling a first release, complete the [publication prerequisites](docs/publishing.md).
 
 ## What to keep out of the repository
 

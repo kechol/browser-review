@@ -61,6 +61,23 @@ curl -s "$HANDOFF_MCP_URL" \
 `review_wait` hands out each annotation exactly once. Whatever it returns, you
 own — act on all of it before calling again.
 
+## MCP over stdio
+
+```sh
+npx browser-review mcp --session latest
+```
+
+Automatic selection is limited to the current project: `CLAUDE_PROJECT_DIR`
+when set, otherwise the working directory where the MCP process starts. It
+selects the newest running session in that exact directory, resolving symlinks.
+A parent, child or sibling project is a separate scope. Invalid or missing
+session project metadata is ignored; no matching session means no active
+session is returned.
+
+To intentionally hand off a session to another project, pass its explicit ID
+with `--session <sessionId>`, or use its tokenized HTTP handoff URL. The Claude
+Code prompt hook uses the same project selection rule.
+
 ## Option B — plain HTTP
 
 For an agent with no MCP client, or a shell loop.
@@ -123,6 +140,10 @@ the diff. The full reasoning is in [SECURITY.md](../SECURITY.md).
 npx browser-review status --json
 npx browser-review close --session latest
 ```
+
+`status` and `close` are explicit administrative commands and still operate
+across projects; `close --session latest` closes the newest active session
+globally. Prefer an explicit ID when multiple projects are open.
 
 Session files live in `$XDG_STATE_HOME/browser-review/sessions/`, or
 `~/.local/state/browser-review/sessions/` when that is unset. They are ordinary

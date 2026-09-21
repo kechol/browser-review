@@ -126,15 +126,31 @@ export function isSessionActive(session: Session): boolean {
   return !session.closedAt && isProcessAlive(session.pid);
 }
 
-/**
- * Resolve a session reference. `latest` means the newest session whose server
- * process is still running, which is what a skill or hook wants when the user
- * has not named one.
- */
-export async function resolveSession(ref: string | undefined): Promise<SessionFile | null> {
+/** Canonical, existing directories only: invalid metadata must never widen scope. */
+async function canonicalProjectDir(value: unknown): Promise<string | null> {
+  if (typeof value !== "string" || !path.isAbsolute(value)) return null;
+  try {
+    const canonical = await fs.realpath(value);
+    return (await fs.stat(canonical)).isDirectory() ? canonical : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Explicit IDs are handoffs; optional project scope constrains automatic selection. */
+export async function resolveSession(
+  ref: string | undefined,
+  scope?: { projectDir: string },
+): Promise<SessionFile | null> {
   if (ref && ref !== "latest") return readSessionFile(ref);
-  const files = await listSessionFiles();
-  return files.find((f) => isSessionActive(f.session)) ?? null;
+  const projectDir = scope ? await canonicalProjectDir(scope.projectDir) : null;
+  if (scope && !projectDir) return null;
+  for (const file of await listSessionFiles()) {
+    if (!isSessionActive(file.session)) continue;
+    if (scope && (await canonicalProjectDir(file.session.projectDir)) !== projectDir) continue;
+    return file;
+  }
+  return null;
 }
 
 export async function deleteSessionFile(id: string): Promise<void> {

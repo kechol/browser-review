@@ -4,7 +4,7 @@
 // No HTTP, no dependencies: the session file is the source of truth, and a hook
 // that runs on every prompt should not need a server to answer.
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -33,7 +33,19 @@ function alive(pid) {
   }
 }
 
+function canonicalProjectDir(value) {
+  if (typeof value !== "string" || !path.isAbsolute(value)) return null;
+  try {
+    const canonical = realpathSync(value);
+    return statSync(canonical).isDirectory() ? canonical : null;
+  } catch {
+    return null;
+  }
+}
+
 function newestActiveSession() {
+  const projectDir = canonicalProjectDir(process.env.CLAUDE_PROJECT_DIR ?? process.cwd());
+  if (!projectDir) return null;
   let entries;
   try {
     entries = readdirSync(stateDir()).filter((name) => name.endsWith(".json"));
@@ -47,7 +59,12 @@ function newestActiveSession() {
     try {
       if (!statSync(file).isFile()) continue;
       const parsed = JSON.parse(readFileSync(file, "utf8"));
-      if (!parsed?.session?.closedAt && alive(parsed?.session?.pid)) return parsed;
+      if (
+        !parsed?.session?.closedAt &&
+        alive(parsed?.session?.pid) &&
+        canonicalProjectDir(parsed?.session?.projectDir) === projectDir
+      )
+        return parsed;
     } catch {
       // A half-written or foreign file is not our problem.
     }

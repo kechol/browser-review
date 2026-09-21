@@ -76,6 +76,18 @@ element's `outerHTML`, with `value` attributes stripped. It never reads form
 field values, `document.cookie`, `localStorage`, `sessionStorage`, or IndexedDB.
 Screenshots are opt-in and off by default.
 
+The prompt hook and automatic stdio MCP selection (`mcp --session latest`)
+only select active sessions whose canonical project directory exactly matches
+`CLAUDE_PROJECT_DIR`, or the process working directory when that variable is
+absent. Missing or invalid project metadata is not eligible. An explicit
+session ID or tokenized HTTP handoff deliberately selects that session across
+projects; share those identifiers only with the intended recipient.
+
+**Residual risk.** This is not an anonymization tool. Comments, page URLs,
+visible text, element markup and source hints may contain sensitive information.
+Opt-in screenshots can contain anything visible on the page. Review synthetic
+or sanitized pages when this content must not reach an agent or its provider.
+
 ## Out of scope
 
 - Exposing the server beyond `127.0.0.1`. There is no supported way to do this.

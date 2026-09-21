@@ -29,13 +29,15 @@
   "files": [
     "dist",
     "LICENSE",
+    "NOTICE",
     "README.md"
   ],
   "engines": {
     "node": ">=24"
   },
   "scripts": {
-    "build": "tsc -b"
+    "build": "tsc -b",
+    "prepack": "node ../../scripts/prepare-package.mjs"
   },
   "peerDependencies": {
     "vite": ">=5"

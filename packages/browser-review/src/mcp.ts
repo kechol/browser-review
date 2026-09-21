@@ -32,7 +32,8 @@ export interface ToolContext {
 }
 
 export function sessionContextFor(ref: string | undefined): ToolContext["resolveSession"] {
-  return () => resolveSession(ref);
+  const projectDir = process.env["CLAUDE_PROJECT_DIR"] ?? process.cwd();
+  return () => resolveSession(ref, { projectDir });
 }
 
 export function sessionContextForId(id: string): ToolContext["resolveSession"] {
