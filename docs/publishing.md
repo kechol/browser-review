@@ -203,6 +203,11 @@ is modified. If npm publication fails, the Homebrew job is skipped.
 The token is used only in the Homebrew job, not in package builds or npm publishing.
 
 If the tap job fails, correct the token or tap problem and rerun that job.
+The archive download retries for up to 15 minutes because a successful npm
+publish can precede tarball availability. Each attempt has a 30-second timeout.
+If registry propagation takes longer, confirm the exact tarball is downloadable
+before rerunning the failed Homebrew job; do not move the tag or bump the version
+solely to retry delivery.
 You may also dispatch Release on the same tag; npm skips existing versions:
 
 ```sh
