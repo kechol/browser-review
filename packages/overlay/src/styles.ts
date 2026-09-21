@@ -106,6 +106,8 @@ button.ghost:hover { background: #f3f4f6; }
 .panel .body .text { color: #111827; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
 .panel .body .where { color: #6b7280; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+.copy-feedback { margin: 8px; font-size: 12px; line-height: 1.5; }
+.copy-feedback:empty { display: none; }
 .panel h4 { margin: 8px; font-size: 14px; }
 .status-details { margin: 8px; font-size: 13px; line-height: 1.5; }
 .status-details dt { font-weight: 600; margin-top: 10px; }

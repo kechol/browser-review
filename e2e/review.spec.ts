@@ -287,3 +287,147 @@ test("clicking a comment scrolls to its element and keeps the detail card in vie
   await overlay.locator(".panel .item").filter({ hasText: comment }).click();
   await expect(overlay.locator(".card .comment")).toHaveText(comment);
 });
+
+test("status copies the MCP URL and Claude Code instructions", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto(session.reviewUrl);
+  const overlay = page.locator("#browser-review-overlay");
+  await expect(overlay.locator(".dot")).toHaveAttribute("data-state", "open");
+  await page.keyboard.press("s");
+  const status = overlay.getByRole("region", { name: "Review status" });
+  await status.getByRole("button", { name: "Copy instructions for Claude Code" }).click();
+  await expect(status.getByRole("status")).toHaveText("Copied! Paste into Claude Code.");
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toContain(`MCP server URL: ${control("mcp")}`);
+  expect(copied).toContain(`claude mcp add --transport http review '${control("mcp")}'`);
+  for (const instruction of [
+    "review_status",
+    "review_wait",
+    "sourceHints",
+    "review_resolve",
+    "review_ask",
+    "editing scope",
+  ]) {
+    expect(copied).toContain(instruction);
+  }
+  await page.keyboard.press("s");
+  await page.keyboard.press("s");
+  await expect(
+    status.getByRole("button", { name: "Copy instructions for Claude Code" }),
+  ).toBeEnabled();
+});
+
+test("status provides selectable instructions when clipboard access fails", async ({ page }) => {
+  await page.goto(session.reviewUrl);
+  const overlay = page.locator("#browser-review-overlay");
+  await expect(overlay.locator(".dot")).toHaveAttribute("data-state", "open");
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      value: {
+        writeText: async () => {
+          throw new Error("Clipboard access denied");
+        },
+      },
+      configurable: true,
+    });
+  });
+  await page.keyboard.press("s");
+  const status = overlay.getByRole("region", { name: "Review status" });
+  const copy = status.getByRole("button", { name: "Copy instructions for Claude Code" });
+  await copy.click();
+  await expect(status.getByRole("status")).toContainText("Copy unavailable");
+  const fallback = status.getByRole("textbox", { name: "Instructions for Claude Code" });
+  await expect(fallback).toBeVisible();
+  expect(await fallback.inputValue()).toContain(control("mcp"));
+  expect(
+    await fallback.evaluate((node: HTMLTextAreaElement) => node.selectionEnd - node.selectionStart),
+  ).toBe((await fallback.inputValue()).length);
+  await fallback.evaluate((node) => node.dispatchEvent(new Event("scroll")));
+  await expect(fallback).toBeFocused();
+  await expect(copy).toBeEnabled();
+});
+
+test.describe("mobile touch element selection", () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+
+  test("highlights on touch down and keeps the selection visible while composing", async ({
+    page,
+    context,
+  }) => {
+    await page.goto(session.reviewUrl);
+    const overlay = page.locator("#browser-review-overlay");
+    await expect(overlay.locator(".dot")).toHaveAttribute("data-state", "open");
+    await overlay.locator('[data-action="annotate"]').tap();
+    const target = page.locator("h1.hero-title");
+    const box = (await target.boundingBox())!;
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x: box.x + 20, y: box.y + 20 }],
+    });
+    await expect(overlay.locator(".highlight")).toBeVisible();
+    await expect(overlay.locator(".label")).toBeVisible();
+    await expect(overlay.locator(".composer")).toBeHidden();
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await expect(overlay.locator(".composer")).toBeVisible();
+    await expect(overlay.locator(".highlight")).toBeVisible();
+    await overlay.locator(".composer textarea").fill("Mobile selection stays visible");
+    await page.evaluate(() => window.scrollBy(0, 60));
+    await expect
+      .poll(async () => {
+        const selected = await target.boundingBox();
+        const highlight = await overlay.locator(".highlight").boundingBox();
+        return (
+          !!selected &&
+          !!highlight &&
+          Math.abs(selected.y - highlight.y) < 1 &&
+          Math.abs(selected.height - highlight.height) < 1
+        );
+      })
+      .toBe(true);
+    await overlay.locator(".composer").getByRole("button", { name: "Cancel" }).tap();
+    await expect(overlay.locator(".highlight")).toBeHidden();
+    await expect(overlay.locator(".label")).toBeHidden();
+
+    await overlay.locator('[data-action="annotate"]').tap();
+    await target.tap();
+    await expect(overlay.locator(".highlight")).toBeVisible();
+    await overlay.locator(".composer textarea").fill("Mobile comment submission");
+    await overlay.locator(".composer").getByRole("button", { name: "Send", exact: true }).tap();
+    await expect(overlay.locator(".composer")).toBeHidden();
+    await expect(overlay.locator(".highlight")).toBeHidden();
+    await expect
+      .poll(async () => (await pending()).some((a) => a.comment === "Mobile comment submission"))
+      .toBe(true);
+  });
+
+  test("touch scrolling clears the preview without opening a composer", async ({
+    page,
+    context,
+  }) => {
+    await page.goto(session.reviewUrl);
+    await page.evaluate(() => {
+      document.body.style.minHeight = "4000px";
+    });
+    const overlay = page.locator("#browser-review-overlay");
+    await expect(overlay.locator(".dot")).toHaveAttribute("data-state", "open");
+    await overlay.locator('[data-action="annotate"]').tap();
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x: 100, y: 500 }],
+    });
+    await expect(overlay.locator(".highlight")).toBeVisible();
+    for (const y of [480, 420, 350, 250]) {
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [{ x: 100, y }],
+      });
+    }
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+    await expect(overlay.locator(".highlight")).toBeHidden();
+    await expect(overlay.locator(".composer")).toBeHidden();
+    await expect(overlay.locator('[data-action="annotate"]')).toHaveAttribute("data-on", "true");
+  });
+});
