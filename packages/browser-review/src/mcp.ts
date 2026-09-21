@@ -42,7 +42,7 @@ export function sessionContextForId(id: string): ToolContext["resolveSession"] {
 
 const NO_SESSION =
   "no_active_session: no browser-review session is running. Start one with " +
-  "/browser-review:open <file-or-localhost-url>, or `npx browser-review open <target>` " +
+  "/browser-review:open <file-or-proxy-url>, or `npx browser-review open <target>` " +
   "outside Claude Code.";
 
 function text(body: string, isError = false) {

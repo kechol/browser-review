@@ -108,9 +108,9 @@ This is a public repository. Please do not add:
 Pull requests that break one of these will be asked to change:
 
 - The server binds to `127.0.0.1` only. Do not add a host or interface option.
-- The project makes no outbound network requests. `pnpm run check:no-egress`
-  fails the build if a request target other than loopback or the configured
-  upstream appears in the source.
+- The only outbound request target is the explicit, validated proxy upstream.
+  `pnpm run check:no-egress` fails the build if network primitives escape the
+  dedicated proxy/upstream modules or a fixed non-loopback target appears.
 - Nothing is written inside the user's repository. Session state lives under
   `$XDG_STATE_HOME/browser-review/`.
 - The overlay never reads form values, cookies, or browser storage.

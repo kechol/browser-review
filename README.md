@@ -112,14 +112,43 @@ Or skip MCP entirely and talk to the HTTP feed with `curl` — see
 
 ## The two modes
 
-|                             | `html-file`                                                     | `proxy`                                                                            |
-| --------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| **Target**                  | a local `.html` file                                            | `http://localhost:PORT/...`                                                        |
-| **How the overlay gets in** | the file is parsed and served with the overlay appended         | every response is forwarded; HTML gets the overlay spliced in                      |
-| **Source hints**            | exact — every element is tagged with the line it was written on | depends on your framework; see below                                               |
-| **The agent may edit**      | that one file                                                   | anything under the project directory                                               |
-| **Live reload**             | yes, the server watches the file                                | your dev server's own HMR, passed straight through                                 |
-| **Caveat**                  | —                                                               | a `Content-Security-Policy` from the dev server is removed so the overlay can load |
+|                             | `html-file`                                                     | `proxy`                                                                                         |
+| --------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| **Target**                  | a local `.html` file                                            | localhost HTTP, or an explicitly allowed trusted HTTPS staging origin                           |
+| **How the overlay gets in** | the file is parsed and served with the overlay appended         | every response is forwarded; HTML gets the overlay spliced in                                   |
+| **Source hints**            | exact — every element is tagged with the line it was written on | depends on your framework; see below                                                            |
+| **The agent may edit**      | that one file                                                   | anything under the project directory                                                            |
+| **Live reload**             | yes, the server watches the file                                | your dev server's own HMR/WSS, passed through                                                   |
+| **Caveat**                  | —                                                               | upstream CSP is removed; remote mode trusts the reviewed page and has stricter credential rules |
+
+### Trusted staging origins
+
+Remote proxying is off by default. To review a staging deployment that you own
+and trust, opt in for that invocation:
+
+```sh
+npx browser-review open https://staging.example.test/admin --allow-remote --json
+```
+
+The review server still listens only on `127.0.0.1`. A remote target must be one
+HTTPS origin with no URL credentials. Its DNS answers are resolved once at
+startup, rejected if they are loopback, unspecified, link-local, or multicast,
+then pinned for the session. TLS certificate and hostname verification remain
+enabled for HTTPS and WSS.
+
+Remote mode does not forward browser cookies, `Authorization`, a token-bearing
+`Referer`, or client-supplied forwarding headers. Instead, it keeps upstream
+cookies in a per-session in-memory jar and strips upstream cookie, authentication
+challenge, site-data, and reporting headers from browser responses. If staging
+uses Basic or Bearer authentication, provide exactly one credential through the
+`BROWSER_REVIEW_REMOTE_AUTHORIZATION` environment variable; it is never written
+to the session file or command line. Prefer a read-only staging account.
+
+This is for a trusted, self-managed staging origin, not arbitrary third-party
+pages. The page and its scripts can observe the tokenized review path and reach
+the review control channel. CSP is removed so the overlay can load, and absolute
+URLs in the page are not rewritten, so the browser may fetch them directly.
+See [docs/modes.md](docs/modes.md) and [SECURITY.md](SECURITY.md) before using it.
 
 ## How it finds the code
 
@@ -167,11 +196,12 @@ See [`examples/vite-react`](examples/vite-react).
 
 ## What it will not do
 
-- **Reach the network.** The server binds to `127.0.0.1`, there is no host
-  option, and nothing in the source makes an outbound request. CI fails the
-  build if a non-loopback URL host appears anywhere in it.
-- **Review a site you do not run.** Only local files and
-  `http://localhost` / `http://127.0.0.1` upstreams are accepted.
+- **Expose the review server to the network.** It always binds to `127.0.0.1`
+  and has no host option. The only outbound capability is the explicit, pinned
+  proxy upstream; CI rejects fixed remote destinations and network primitives
+  outside that implementation.
+- **Safely sandbox an arbitrary site.** Local targets remain the default. Remote
+  proxying requires `--allow-remote`, HTTPS, and a trusted origin you control.
 - **Read what you typed into the page.** The overlay sends at most 500
   characters of the clicked element's markup, with `value` attributes stripped,
   and never touches form values, cookies, or browser storage.

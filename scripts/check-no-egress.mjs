@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// browser-review promises that it never talks to anything but this machine.
-// That promise is only worth what it can be checked against, so this runs in
-// CI and fails the build if the shipped source grows a way out.
+// browser-review binds only to loopback. Its one outbound capability is the
+// user-selected proxy upstream, implemented in two narrowly scoped modules.
+// This fails CI if other shipped source grows a network primitive or if a
+// fixed non-loopback destination appears anywhere in executable source.
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
@@ -21,14 +22,13 @@ const SCAN_DIRS = [
 // filled from the session's own port, or `PORT` standing in inside help text.
 const LOOPBACK = /^(?:127\.0\.0\.1|localhost|\[::1\]|::1)(?::(?:\d+|\$\{[^}]*\}|PORT))?$/;
 
-/** Modules that exist to reach the network in ways we do not need. */
-const FORBIDDEN_IMPORTS = [
-  /from\s+["'](?:node:)?https["']/,
-  /from\s+["'](?:node:)?dns["']/,
-  /from\s+["'](?:node:)?dgram["']/,
-  /from\s+["'](?:node:)?tls["']/,
-  /\brequire\(\s*["'](?:node:)?https["']\s*\)/,
-];
+/** Network primitives and the only shipped modules allowed to import them. */
+const NETWORK_IMPORT =
+  /(?:from\s+|\b(?:require|import)\(\s*)["'](?:node:)?(https|dns(?:\/promises)?|dgram|tls|net)["']/;
+const NETWORK_IMPORT_ALLOWLIST = new Map([
+  ["packages/browser-review/src/proxy.ts", new Set(["https", "net"])],
+  ["packages/browser-review/src/upstream.ts", new Set(["dns", "dns/promises", "net"])],
+]);
 
 /** Ways a browser page can call home. The overlay uses none of them. */
 const FORBIDDEN_CALLS = [
@@ -63,8 +63,9 @@ for (const rel of SCAN_DIRS.flatMap(files)) {
   lines.forEach((line, index) => {
     const at = `${rel}:${index + 1}`;
 
-    for (const pattern of FORBIDDEN_IMPORTS) {
-      if (pattern.test(line)) problems.push(`${at}: imports a module used to reach the network`);
+    const networkImport = line.match(NETWORK_IMPORT)?.[1];
+    if (networkImport && !NETWORK_IMPORT_ALLOWLIST.get(rel)?.has(networkImport)) {
+      problems.push(`${at}: imports network module "${networkImport}" outside the proxy boundary`);
     }
     for (const pattern of FORBIDDEN_CALLS) {
       if (pattern.test(line)) problems.push(`${at}: uses a browser API that can send data out`);
@@ -87,13 +88,13 @@ for (const rel of SCAN_DIRS.flatMap(files)) {
   });
 }
 
-// The review server reaches the upstream dev server through node:http, and only
-// ever with a hostname taken from the URL the user passed. Anything that calls
-// out with a hostname the user did not supply would have to appear as a literal
-// above, which is what this check exists to catch.
+// proxy.ts connects through node:http/node:https, and upstream.ts resolves and
+// pins the hostname taken from the user-selected URL. A fixed destination
+// would have to appear as a literal above, which is the other half of this
+// check.
 
 if (problems.length > 0) {
-  console.error("browser-review must not talk to anything but this machine.\n");
+  console.error("browser-review has an outbound capability outside its proxy boundary.\n");
   for (const problem of problems) console.error(`  ${problem}`);
   console.error(
     "\nIf one of these is a false positive — prose in a comment, say — reword it " +
@@ -102,4 +103,6 @@ if (problems.length > 0) {
   process.exit(1);
 }
 
-console.log("no-egress check passed: every URL host in the source is loopback.");
+console.log(
+  "no-egress check passed: network primitives are scoped and no fixed remote host exists.",
+);

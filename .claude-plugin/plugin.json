@@ -2,7 +2,7 @@
   "name": "browser-review",
   "displayName": "Browser Review",
   "version": "0.2.1",
-  "description": "Point at an element in your browser, leave a comment, and have Claude Code find and fix the code behind it. Works on a local HTML file or any localhost dev server.",
+  "description": "Review a local page, localhost app, or explicitly trusted HTTPS staging origin, then have Claude Code find and fix the code behind your comments.",
   "author": {
     "name": "kechol",
     "url": "https://github.com/kechol"

@@ -45,8 +45,26 @@ describe("parseTarget", () => {
     expect(() => parseTarget("http://example.com", dir)).toThrow(/not a local host/);
   });
 
-  it("refuses https, which no local dev server needs", () => {
-    expect(() => parseTarget("https://localhost:5173", dir)).toThrow(/only http/);
+  it("accepts an explicitly allowed remote HTTPS origin and keeps its entry path", () => {
+    expect(
+      parseTarget("https://staging.example.test/admin?tab=users", dir, { allowRemote: true }),
+    ).toEqual({
+      mode: "proxy",
+      target: "https://staging.example.test",
+      entryPath: "/admin?tab=users",
+    });
+  });
+
+  it("still rejects remote HTTP, URL credentials and local HTTPS after opt-in", () => {
+    expect(() => parseTarget("http://staging.example.test", dir, { allowRemote: true })).toThrow(
+      /must use https/,
+    );
+    expect(() =>
+      parseTarget("https://user:secret@staging.example.test", dir, { allowRemote: true }),
+    ).toThrow(/username or password/);
+    expect(() => parseTarget("https://localhost:5173", dir, { allowRemote: true })).toThrow(
+      /localhost proxy URLs must use http/,
+    );
   });
 
   it("refuses a file that is not HTML", () => {

@@ -22,11 +22,11 @@ import { createAnnotation } from "./annotations.js";
 import { createScreenshotter } from "./screenshot.js";
 import { injectOverlay, instrumentHtml } from "./instrument.js";
 import { proxyRequest, proxyUpgrade, type ProxyOptions } from "./proxy.js";
+import { RemoteCookieJar } from "./cookie-jar.js";
 import {
   classifyOrigin,
   contentTypeFor,
   hostIsLoopback,
-  LOOPBACK_HOSTS,
   readJsonBody,
   send,
   sendJson,
@@ -34,6 +34,7 @@ import {
 } from "./http-util.js";
 import { pendingOf, readSessionFile, updateSessionFile, writeSessionFile } from "./store.js";
 import { sessionsDir } from "./paths.js";
+import { remoteAuthorization, resolveUpstream, type ResolveHostname } from "./upstream.js";
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 
@@ -56,6 +57,14 @@ export interface StartOptions {
   port: number;
   /** Path the review URL opens on. Proxy mode only. */
   entryPath?: string;
+  /** Required for a non-loopback HTTPS target. */
+  allowRemote?: boolean;
+  /** Test seam for deterministic, network-free DNS boundary coverage. */
+  resolveHostname?: ResolveHostname;
+  /** Additional trusted CA material used by synthetic integration tests. */
+  tlsCa?: string | Buffer;
+  /** In-memory credential injection used by embedders and isolated tests. */
+  remoteAuthorization?: string;
 }
 
 export interface RunningServer {
@@ -93,10 +102,19 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
   });
 
   const staticRoot = opts.mode === "html-file" ? await fs.realpath(path.dirname(opts.target)) : "";
-  const upstream = opts.mode === "proxy" ? new URL(opts.target) : null;
-  if (upstream && (upstream.protocol !== "http:" || !LOOPBACK_HOSTS.has(upstream.hostname))) {
-    throw new Error("proxy upstream must use HTTP on loopback");
-  }
+  const upstream =
+    opts.mode === "proxy"
+      ? await resolveUpstream(opts.target, {
+          allowRemote: opts.allowRemote,
+          ...(opts.resolveHostname ? { resolveHostname: opts.resolveHostname } : {}),
+        })
+      : null;
+  const authorization = upstream?.remote
+    ? remoteAuthorization(
+        opts.remoteAuthorization ?? process.env["BROWSER_REVIEW_REMOTE_AUTHORIZATION"],
+      )
+    : undefined;
+  const cookieJar = upstream?.remote ? new RemoteCookieJar() : undefined;
   const proxySockets = new Set<Duplex>();
 
   const server = http.createServer();
@@ -150,7 +168,12 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
 
   const proxyOptions: ProxyOptions | null = upstream
     ? {
-        upstream,
+        upstream: upstream.url,
+        remote: upstream.remote,
+        ...(upstream.lookup ? { lookup: upstream.lookup } : {}),
+        ...(authorization ? { authorization } : {}),
+        ...(cookieJar ? { cookieJar } : {}),
+        ...(opts.tlsCa ? { tlsCa: opts.tlsCa } : {}),
         basePath,
         selfOrigin,
         overlayUrl: `${controlBase}/overlay.js`,
@@ -572,6 +595,7 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
     sockets.clear();
     for (const socket of proxySockets) socket.destroy();
     proxySockets.clear();
+    cookieJar?.clear();
     wss.close();
     await Promise.all(watchers.map((w) => w.close()));
     await delivery.close();

@@ -1,10 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 import http from "node:http";
+import https from "node:https";
 import net from "node:net";
+import { isIP, type LookupFunction } from "node:net";
 import { brotliDecompressSync, unzipSync } from "node:zlib";
 
-import type { IncomingMessage, ServerResponse } from "node:http";
+import type {
+  IncomingHttpHeaders,
+  IncomingMessage,
+  RequestOptions,
+  ServerResponse,
+} from "node:http";
 import type { Duplex } from "node:stream";
+import type { RemoteCookieJar } from "./cookie-jar.js";
 import { injectOverlay } from "./instrument.js";
 import { send } from "./http-util.js";
 
@@ -24,6 +32,11 @@ const HOP_BY_HOP = new Set([
 
 export interface ProxyOptions {
   upstream: URL;
+  remote?: boolean;
+  lookup?: LookupFunction;
+  cookieJar?: RemoteCookieJar;
+  authorization?: string;
+  tlsCa?: string | Buffer;
   /** Absolute base path of this session, e.g. `/r/<token>`. */
   basePath: string;
   selfOrigin: string;
@@ -33,32 +46,82 @@ export interface ProxyOptions {
   appCookieName?: string;
 }
 
-function filterRequestHeaders(
+const REMOTE_REQUEST_HEADERS = new Set([
+  "authorization",
+  "cookie",
+  "forwarded",
+  "referer",
+  "via",
+  "x-real-ip",
+]);
+
+const REMOTE_RESPONSE_HEADERS = new Set([
+  "clear-site-data",
+  "nel",
+  "report-to",
+  "reporting-endpoints",
+  "set-cookie",
+  "www-authenticate",
+]);
+
+const LOOPBACK_NAMES = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
+function isReviewOrigin(value: string | string[] | undefined, selfOrigin: string): boolean {
+  if (typeof value !== "string") return false;
+  try {
+    const received = new URL(value);
+    const self = new URL(selfOrigin);
+    return (
+      received.protocol === self.protocol &&
+      received.port === self.port &&
+      LOOPBACK_NAMES.has(received.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function upstreamUrl(upstream: URL, upstreamPath: string): URL {
+  const normalized = upstreamPath.startsWith("/") ? upstreamPath : `/${upstreamPath}`;
+  return new URL(`${upstream.origin}${normalized}`);
+}
+
+export function filterRequestHeaders(
   headers: IncomingMessage["headers"],
-  upstream: URL,
-  cookieName?: string,
+  upstreamPath: string,
+  opts: ProxyOptions,
 ) {
   const out: Record<string, string | string[]> = {};
   for (const [key, value] of Object.entries(headers)) {
     if (value === undefined) continue;
     if (HOP_BY_HOP.has(key)) continue;
+    if (opts.remote && (REMOTE_REQUEST_HEADERS.has(key) || key.startsWith("x-forwarded-"))) {
+      continue;
+    }
     if (key === "cookie" && typeof value === "string") {
       out[key] = value
         .split(";")
         .filter(
-          (part) => !/^br_app_\d+=/.test(part.trim()) && !part.trim().startsWith(`${cookieName}=`),
+          (part) =>
+            !/^br_app_\d+=/.test(part.trim()) && !part.trim().startsWith(`${opts.appCookieName}=`),
         )
         .join(";");
     } else out[key] = value;
   }
-  out["host"] = upstream.host;
+  out["host"] = opts.upstream.host;
+  if (opts.remote) {
+    const requestUrl = upstreamUrl(opts.upstream, upstreamPath);
+    const cookie = opts.cookieJar?.header(requestUrl);
+    if (cookie) out["cookie"] = cookie;
+    if (opts.authorization) out["authorization"] = opts.authorization;
+    if (isReviewOrigin(headers.origin, opts.selfOrigin)) out["origin"] = opts.upstream.origin;
+    else delete out["origin"];
+  }
   // Ask for plain bytes: an HTML body has to be readable to have the overlay
   // spliced into it, and re-compressing it would buy nothing over loopback.
   out["accept-encoding"] = "identity";
   return out;
 }
-
-const LOOPBACK_NAMES = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 
 /**
  * Point a redirect back at the review server.
@@ -76,11 +139,52 @@ export function rewriteLocation(location: string, opts: ProxyOptions): string {
   } catch {
     return location;
   }
+  if (opts.remote) {
+    if (url.origin === opts.upstream.origin) {
+      return opts.selfOrigin + opts.basePath + url.pathname + url.search + url.hash;
+    }
+    return url.href;
+  }
   const samePort = (url.port || "80") === (opts.upstream.port || "80");
   if (url.protocol === "http:" && samePort && LOOPBACK_NAMES.has(url.hostname)) {
     return opts.selfOrigin + opts.basePath + url.pathname + url.search + url.hash;
   }
   return location;
+}
+
+function requestOptions(
+  req: IncomingMessage,
+  upstreamPath: string,
+  opts: ProxyOptions,
+): RequestOptions {
+  const hostname = opts.upstream.hostname.replace(/^\[|\]$/g, "");
+  return {
+    protocol: opts.upstream.protocol,
+    hostname,
+    port: opts.upstream.port || (opts.remote ? 443 : 80),
+    method: req.method,
+    path: upstreamPath,
+    headers: filterRequestHeaders(req.headers, upstreamPath, opts),
+    ...(opts.lookup ? { lookup: opts.lookup, autoSelectFamily: true } : {}),
+    ...(opts.remote && isIP(hostname) === 0 ? { servername: hostname } : {}),
+    ...(opts.tlsCa ? { ca: opts.tlsCa } : {}),
+  };
+}
+
+function responseHeaders(
+  headers: IncomingHttpHeaders,
+  requestUrl: URL,
+  opts: ProxyOptions,
+): Record<string, string | string[]> {
+  if (opts.remote) opts.cookieJar?.store(headers["set-cookie"], requestUrl);
+  const filtered: Record<string, string | string[]> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (value === undefined || HOP_BY_HOP.has(key)) continue;
+    if (opts.remote && REMOTE_RESPONSE_HEADERS.has(key)) continue;
+    filtered[key] = value;
+  }
+  if (opts.remote) filtered["referrer-policy"] = "no-referrer";
+  return filtered;
 }
 
 /**
@@ -93,93 +197,81 @@ export function proxyRequest(
   upstreamPath: string,
   opts: ProxyOptions,
 ): void {
-  const upstreamReq = http.request(
-    {
-      protocol: opts.upstream.protocol,
-      hostname: opts.upstream.hostname.replace(/^\[|\]$/g, ""),
-      port: opts.upstream.port || 80,
-      method: req.method,
-      path: upstreamPath,
-      headers: filterRequestHeaders(req.headers, opts.upstream, opts.appCookieName),
-    },
-    (upstreamRes) => {
-      const headers: Record<string, string | string[]> = {};
-      for (const [key, value] of Object.entries(upstreamRes.headers)) {
-        if (value === undefined || HOP_BY_HOP.has(key)) continue;
-        headers[key] = value;
-      }
+  const requestUrl = upstreamUrl(opts.upstream, upstreamPath);
+  const transport = opts.remote ? https : http;
+  const upstreamReq = transport.request(requestOptions(req, upstreamPath, opts), (upstreamRes) => {
+    const headers = responseHeaders(upstreamRes.headers, requestUrl, opts);
 
-      const ownCookies = res.getHeader("set-cookie");
-      if (ownCookies && headers["set-cookie"]) {
-        headers["set-cookie"] = [String(ownCookies), ...[headers["set-cookie"]].flat()];
-      }
+    const ownCookies = res.getHeader("set-cookie");
+    if (ownCookies && headers["set-cookie"]) {
+      headers["set-cookie"] = [String(ownCookies), ...[headers["set-cookie"]].flat()];
+    }
 
-      if (typeof headers["location"] === "string") {
-        headers["location"] = rewriteLocation(headers["location"], opts);
-      }
+    if (typeof headers["location"] === "string") {
+      headers["location"] = rewriteLocation(headers["location"], opts);
+    }
 
-      // A dev server's CSP is written for its own origin and would block the
-      // overlay. This is a loopback-only review tool, so we drop the header and
-      // say so rather than silently shipping a page that half works.
-      for (const name of ["content-security-policy", "content-security-policy-report-only"]) {
-        if (headers[name]) {
-          opts.onWarning(
-            `upstream sent ${name}; removing it for the reviewed page so the overlay can load`,
-          );
-          delete headers[name];
-        }
+    // A dev server's CSP is written for its own origin and would block the
+    // overlay. This is a loopback-only review tool, so we drop the header and
+    // say so rather than silently shipping a page that half works.
+    for (const name of ["content-security-policy", "content-security-policy-report-only"]) {
+      if (headers[name]) {
+        opts.onWarning(
+          `upstream sent ${name}; removing it for the reviewed page so the overlay can load`,
+        );
+        delete headers[name];
       }
+    }
 
-      const contentType = String(upstreamRes.headers["content-type"] ?? "");
-      upstreamRes.on("error", () => res.destroy());
-      if (
-        req.method === "HEAD" ||
-        upstreamRes.statusCode === 204 ||
-        upstreamRes.statusCode === 304 ||
-        !contentType.toLowerCase().includes("text/html")
-      ) {
-        res.writeHead(upstreamRes.statusCode ?? 502, headers);
-        upstreamRes.pipe(res);
+    const contentType = String(upstreamRes.headers["content-type"] ?? "");
+    upstreamRes.on("error", () => res.destroy());
+    if (
+      req.method === "HEAD" ||
+      upstreamRes.statusCode === 204 ||
+      upstreamRes.statusCode === 304 ||
+      !contentType.toLowerCase().includes("text/html")
+    ) {
+      res.writeHead(upstreamRes.statusCode ?? 502, headers);
+      upstreamRes.pipe(res);
+      return;
+    }
+
+    const chunks: Buffer[] = [];
+    let size = 0;
+    upstreamRes.on("data", (chunk: Buffer) => {
+      size += chunk.byteLength;
+      if (size > MAX_HTML_BYTES) {
+        upstreamRes.destroy();
+        res.destroy();
         return;
       }
-
-      const chunks: Buffer[] = [];
-      let size = 0;
-      upstreamRes.on("data", (chunk: Buffer) => {
-        size += chunk.byteLength;
-        if (size > MAX_HTML_BYTES) {
-          upstreamRes.destroy();
-          res.destroy();
-          return;
-        }
-        chunks.push(chunk);
-      });
-      upstreamRes.on("end", () => {
-        let bytes = Buffer.concat(chunks);
-        const encoding = String(headers["content-encoding"] ?? "identity").toLowerCase();
-        try {
-          if (encoding === "br")
-            bytes = brotliDecompressSync(bytes, { maxOutputLength: MAX_HTML_BYTES });
-          else if (encoding === "gzip" || encoding === "deflate")
-            bytes = unzipSync(bytes, { maxOutputLength: MAX_HTML_BYTES });
-          else if (encoding !== "identity") throw new Error("unsupported content encoding");
-        } catch {
-          send(res, 502, "browser-review: unable to decode upstream HTML\n");
-          return;
-        }
-        delete headers["content-encoding"];
-        const html = bytes.toString("utf8");
-        const injected = injectOverlay(html, opts.overlayUrl, opts.overlayConfig);
-        const body = Buffer.from(injected, "utf8");
-        delete headers["etag"];
-        delete headers["content-md5"];
-        delete headers["content-length"];
-        headers["content-length"] = String(body.byteLength);
-        res.writeHead(upstreamRes.statusCode ?? 200, headers);
-        res.end(body);
-      });
-    },
-  );
+      chunks.push(chunk);
+    });
+    upstreamRes.on("end", () => {
+      let bytes = Buffer.concat(chunks);
+      const encoding = String(headers["content-encoding"] ?? "identity").toLowerCase();
+      try {
+        if (encoding === "br")
+          bytes = brotliDecompressSync(bytes, { maxOutputLength: MAX_HTML_BYTES });
+        else if (encoding === "gzip" || encoding === "deflate")
+          bytes = unzipSync(bytes, { maxOutputLength: MAX_HTML_BYTES });
+        else if (encoding !== "identity") throw new Error("unsupported content encoding");
+      } catch {
+        send(res, 502, "browser-review: unable to decode upstream HTML\n");
+        return;
+      }
+      delete headers["content-encoding"];
+      const html = bytes.toString("utf8");
+      const injected = injectOverlay(html, opts.overlayUrl, opts.overlayConfig);
+      const body = Buffer.from(injected, "utf8");
+      delete headers["etag"];
+      delete headers["content-md5"];
+      delete headers["content-length"];
+      headers["content-length"] = String(body.byteLength);
+      res.writeHead(upstreamRes.statusCode ?? 200, headers);
+      res.end(body);
+    });
+  });
 
   upstreamReq.on("error", (err) => {
     if (res.headersSent) {
@@ -212,22 +304,25 @@ export function proxyUpgrade(
   upstreamPath: string,
   opts: ProxyOptions,
 ): void {
-  const upstreamReq = http.request({
-    protocol: opts.upstream.protocol,
-    hostname: opts.upstream.hostname.replace(/^\[|\]$/g, ""),
-    port: opts.upstream.port || 80,
-    method: req.method,
-    path: upstreamPath,
+  const requestUrl = upstreamUrl(opts.upstream, upstreamPath);
+  const transport = opts.remote ? https : http;
+  const upstreamReq = transport.request({
+    ...requestOptions(req, upstreamPath, opts),
     headers: {
-      ...filterRequestHeaders(req.headers, opts.upstream, opts.appCookieName),
+      ...filterRequestHeaders(req.headers, upstreamPath, opts),
       connection: "Upgrade",
       upgrade: req.headers.upgrade ?? "websocket",
     },
   });
 
   upstreamReq.on("upgrade", (upstreamRes, upstreamSocket: net.Socket, upstreamHead: Buffer) => {
+    if (opts.remote) opts.cookieJar?.store(upstreamRes.headers["set-cookie"], requestUrl);
     const statusLine = `HTTP/1.1 ${upstreamRes.statusCode} ${upstreamRes.statusMessage}\r\n`;
     const headerLines = Object.entries(upstreamRes.headers)
+      .filter(
+        ([key, value]) =>
+          value !== undefined && (!opts.remote || !REMOTE_RESPONSE_HEADERS.has(key)),
+      )
       .flatMap(([key, value]) =>
         Array.isArray(value) ? value.map((v) => `${key}: ${v}`) : [`${key}: ${value}`],
       )

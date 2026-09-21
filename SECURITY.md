@@ -17,9 +17,10 @@ enough for us to reproduce it.
 
 ## Threat model
 
-browser-review runs entirely on one machine. The review server binds to
-`127.0.0.1` only, there is no `--host` option, and the project makes no outbound
-network requests of its own. The threats we design against are therefore local.
+The browser-review control plane runs on one machine. The review server binds to
+`127.0.0.1` only and there is no `--host` option. Local files and localhost HTTP
+upstreams remain the default. An explicit `--allow-remote` invocation may make
+outbound HTTPS/WSS connections only to its validated, pinned proxy upstream.
 
 ### 1. Another local process reaching the review server
 
@@ -88,9 +89,54 @@ visible text, element markup and source hints may contain sensitive information.
 Opt-in screenshots can contain anything visible on the page. Review synthetic
 or sanitized pages when this content must not reach an agent or its provider.
 
+### 5. A remote proxy target reaching an unintended service
+
+A staging hostname can be mistyped, resolve to a special-use address, or change
+its DNS answers after startup. An attacker could otherwise use remote mode as an
+SSRF primitive or rebind a validated hostname to a local service.
+
+**Mitigations.** Remote proxying is denied unless that invocation includes
+`--allow-remote`. Non-loopback targets must use HTTPS, URL userinfo is rejected,
+and DNS is resolved once before the review server listens. The complete answer
+set is rejected if any address is loopback (including IPv4-mapped IPv6),
+unspecified, link-local, or multicast. Validated addresses are pinned for the
+session; later requests do not expand the set. `Host`, TLS SNI, and certificate
+verification continue to use the original upstream hostname. TLS verification
+cannot be disabled. HTTP and WebSocket requests use the same policy.
+
+The source check permits HTTPS, DNS, and socket primitives only in the dedicated
+upstream/proxy implementation and still rejects fixed non-loopback URL targets.
+
+**Residual risk.** RFC1918 and IPv6 ULA addresses are intentionally allowed for
+private staging. The user is responsible for choosing the intended service and
+for trusting every pinned address returned by its DNS at startup.
+
+### 6. Remote credentials and browser state crossing trust boundaries
+
+The review page is served from a loopback origin, not the staging origin. Passing
+ambient browser credentials through would mix those trust domains, while passing
+staging `Set-Cookie` headers back would store staging state against loopback.
+
+**Mitigations.** Remote requests discard browser `Cookie`, `Authorization`,
+`Referer`, `Forwarded`, `X-Forwarded-*`, `Via`, and `X-Real-IP` headers. A valid
+review-server `Origin` is rewritten to the single upstream origin; arbitrary
+origins are not synthesized. Remote responses keep cookies in a per-session,
+in-memory jar and do not expose `Set-Cookie`, `WWW-Authenticate`,
+`Clear-Site-Data`, `NEL`, `Report-To`, or `Reporting-Endpoints` to the browser.
+Cookie Domain, Path, Secure, expiry, and deletion rules are applied for HTTP and
+WebSocket handshakes. An optional Basic or Bearer value comes only from
+`BROWSER_REVIEW_REMOTE_AUTHORIZATION`; it is not placed in CLI arguments, logs,
+session JSON, MCP output, or errors. The jar and credential die with the session.
+
+**Residual risk.** The proxy cannot distinguish a login POST from a business-data
+mutation. Use a read-only staging account and synthetic fixtures for tests. CSP
+is removed to inject the overlay, absolute URLs are not rewritten, and the
+trusted page and all of its scripts can observe the tokenized path and access the
+review control channel. Remote mode is not a sandbox for third-party content.
+
 ## Out of scope
 
 - Exposing the server beyond `127.0.0.1`. There is no supported way to do this.
-- Reviewing pages on remote origins. Only local files and `http://localhost` /
-  `http://127.0.0.1` upstreams are accepted.
+- Plain-HTTP remote origins or a switch that disables TLS verification.
+- Treating arbitrary third-party pages as trusted remote review targets.
 - Multi-user or multi-machine deployments.
