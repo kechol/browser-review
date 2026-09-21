@@ -10,7 +10,7 @@
       "name": "browser-review",
       "source": "./",
       "displayName": "Browser Review",
-      "description": "Point at an element in your browser, leave a comment, and have Claude Code find and fix the code behind it. Works on a local HTML file or any localhost dev server.",
+      "description": "Review a local page, localhost app, or explicitly trusted HTTPS staging origin, then have Claude Code find and fix the code behind your comments.",
       "version": "0.2.1",
       "author": {
         "name": "kechol",
@@ -20,7 +20,7 @@
       "repository": "https://github.com/kechol/browser-review",
       "license": "Apache-2.0",
       "category": "development",
-      "keywords": ["review", "browser", "annotation", "frontend", "localhost", "mcp"]
+      "keywords": ["review", "browser", "annotation", "frontend", "localhost", "staging", "mcp"]
     }
   ]
 }

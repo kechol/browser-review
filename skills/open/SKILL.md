@@ -1,6 +1,6 @@
 ---
 name: open
-description: Open a local HTML file or a localhost URL in the browser with a review overlay attached, so the user can click elements and leave comments for an agent to act on. Takes a file path or an http://localhost URL as its argument.
+description: Open a local HTML file, localhost URL, or explicitly trusted HTTPS staging URL in the browser with a review overlay attached, so the user can click elements and leave comments for an agent to act on.
 allowed-tools: Bash(npx browser-review:*), Bash(browser-review:*), Bash(open:*), Bash(xdg-open:*)
 ---
 
@@ -18,15 +18,17 @@ If `$ARGUMENTS` is empty, ask what to review and stop.
 in `.html` or `.htm`. The server will serve that exact file and the agent will
 edit that exact file.
 
-**A URL** — it must start with `http://localhost` or `http://127.0.0.1`. If it
-does not, say so and stop, with the reason: the overlay is injected by proxying
-the page, and proxying a site you do not run is neither safe nor yours to do.
-Offer the alternative — run the site locally and point at that.
+**A URL** — localhost must use `http://localhost`, `http://127.0.0.1`, or
+`http://[::1]`. A non-local URL must use HTTPS and the user must explicitly say
+that it is a staging origin they own, administer, and trust. If ownership and
+trust are not explicit, ask before continuing. Never opt in for a third-party
+page, a URL containing credentials, or remote HTTP.
 
 ## 2. Start the server
 
 ```sh
 npx -y browser-review@^0.2.0 open <target> --project-dir "$CLAUDE_PROJECT_DIR" --json
+# For an explicitly trusted remote target, append: --allow-remote
 ```
 
 It prints one line of JSON: `sessionId`, `reviewUrl`, `handoffMcpUrl`,
@@ -35,6 +37,11 @@ guess any of these values.
 
 If the command fails, show the error as-is. The usual causes are a dev server
 that is not running (proxy mode) and a path that does not exist.
+
+Append `--allow-remote` only for the explicitly trusted HTTPS case above. If
+staging needs Basic or Bearer authentication, have the user supply it through
+`BROWSER_REVIEW_REMOTE_AUTHORIZATION` in the command environment; never put a
+credential in the URL, CLI arguments, output, or handoff block.
 
 ## 3. Tell the user what to do next
 
@@ -73,6 +80,9 @@ repository.
 
 ## Notes
 
-- The server listens on `127.0.0.1` only and makes no outbound requests.
+- The server listens on `127.0.0.1` only. A remote session connects only to its
+  validated, pinned HTTPS/WSS upstream and keeps credentials in that process.
+- Remote mode removes CSP and trusts the page and its scripts with the review
+  control channel. Absolute URLs may bypass the proxy. It is not a sandbox.
 - Leave it running. `/browser-review:status` shows it, `/browser-review:close`
   stops it.

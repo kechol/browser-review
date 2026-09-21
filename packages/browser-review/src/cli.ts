@@ -19,6 +19,7 @@ import {
   sweepStaleSessions,
 } from "./store.js";
 import { ulid } from "./ulid.js";
+import { UpstreamError, validateProxyTarget } from "./upstream.js";
 
 const SELF = fileURLToPath(import.meta.url);
 const STARTUP_TIMEOUT_MS = 15_000;
@@ -26,7 +27,7 @@ const STARTUP_TIMEOUT_MS = 15_000;
 const USAGE = `browser-review — point at an element in your browser, let an agent fix the code.
 
 Usage:
-  browser-review open <file.html | http://localhost:PORT/...> [options]
+  browser-review open <file.html | URL> [options]
   browser-review status [--session <id>] [--json]
   browser-review close [--session <id|latest>]
   browser-review mcp [--session <id|latest>]
@@ -35,12 +36,13 @@ Options:
   --port <n>            Port to listen on. 0 (the default) picks a free one.
   --project-dir <dir>   Repository the agent may edit. Defaults to
                         $CLAUDE_PROJECT_DIR, then the working directory.
+  --allow-remote        Explicitly allow one trusted HTTPS staging origin.
   --json                Print one line of JSON instead of prose.
   --session <id>        Which session to act on. "latest" means the newest
                         running one.
   -h, --help            Show this message.
 
-The server binds to 127.0.0.1 only and makes no outbound network requests.
+The server always binds to 127.0.0.1. Remote proxying is off by default.
 `;
 
 function fail(message: string): never {
@@ -63,32 +65,24 @@ interface ParsedTarget {
 }
 
 /**
- * Work out what is being reviewed, and refuse anything that is not on this
- * machine. Injecting an overlay into a site we do not control would mean
- * proxying someone else's origin, which is neither ours to do nor safe.
+ * Work out what is being reviewed. Remote proxying remains denied unless the
+ * caller explicitly opts in; the server independently repeats this check and
+ * pins the hostname before it starts listening.
  */
-export function parseTarget(raw: string, cwd: string): ParsedTarget {
+export function parseTarget(
+  raw: string,
+  cwd: string,
+  options: { allowRemote?: boolean } = {},
+): ParsedTarget {
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
-    let url: URL;
+    let validated: ReturnType<typeof validateProxyTarget>;
     try {
-      url = new URL(raw);
-    } catch {
-      throw new TargetError(`"${raw}" is not a URL this tool can open.`);
+      validated = validateProxyTarget(raw, options.allowRemote);
+    } catch (err) {
+      if (err instanceof UpstreamError) throw new TargetError(err.message);
+      throw err;
     }
-    if (url.protocol !== "http:") {
-      throw new TargetError(
-        `only http:// URLs are supported (got "${url.protocol}//"). ` +
-          "A local dev server is served over http.",
-      );
-    }
-    if (url.hostname !== "localhost" && url.hostname !== "127.0.0.1" && url.hostname !== "[::1]") {
-      throw new TargetError(
-        `"${url.hostname}" is not a local host. browser-review only proxies ` +
-          "http://localhost and http://127.0.0.1, because injecting a review overlay into " +
-          "a site you do not run is neither safe nor yours to do. To review a deployed page, " +
-          "run it locally first.",
-      );
-    }
+    const { url } = validated;
     const entryPath =
       url.pathname === "/" && !url.search && !url.hash ? "" : url.pathname + url.search + url.hash;
     return entryPath
@@ -102,7 +96,7 @@ export function parseTarget(raw: string, cwd: string): ParsedTarget {
   const ext = path.extname(resolved).toLowerCase();
   if (ext !== ".html" && ext !== ".htm") {
     throw new TargetError(
-      `${resolved} is not an HTML file. Pass an .html file, or a http://localhost URL.`,
+      `${resolved} is not an HTML file. Pass an .html file or a supported proxy URL.`,
     );
   }
   return { mode: "html-file", target: resolved };
@@ -120,16 +114,17 @@ async function cmdOpen(argv: string[]): Promise<void> {
     options: {
       port: { type: "string" },
       "project-dir": { type: "string" },
+      "allow-remote": { type: "boolean", default: false },
       json: { type: "boolean", default: false },
     },
   });
   const raw = positionals[0];
-  if (!raw) fail("open needs a target: an .html file or a http://localhost URL.");
+  if (!raw) fail("open needs a target: an .html file or a proxy URL.");
 
   const cwd = process.cwd();
   let parsed: ParsedTarget;
   try {
-    parsed = parseTarget(raw, cwd);
+    parsed = parseTarget(raw, cwd, { allowRemote: values["allow-remote"] });
   } catch (err) {
     if (err instanceof TargetError) fail(err.message);
     throw err;
@@ -155,8 +150,7 @@ async function cmdOpen(argv: string[]): Promise<void> {
       "__serve",
       "--id",
       id,
-      "--token",
-      token,
+      `--token=${token}`,
       "--mode",
       mode,
       "--target",
@@ -166,6 +160,7 @@ async function cmdOpen(argv: string[]): Promise<void> {
       "--port",
       String(port),
       ...(entryPath ? ["--entry-path", entryPath] : []),
+      ...(values["allow-remote"] ? ["--allow-remote"] : []),
     ],
     { detached: true, stdio: ["ignore", logFd, logFd] },
   );
@@ -228,6 +223,7 @@ async function cmdServe(argv: string[]): Promise<void> {
       "project-dir": { type: "string" },
       port: { type: "string" },
       "entry-path": { type: "string" },
+      "allow-remote": { type: "boolean", default: false },
     },
   });
   const { startReviewServer } = await import("./server.js");
@@ -239,6 +235,7 @@ async function cmdServe(argv: string[]): Promise<void> {
     target: String(values["target"]),
     projectDir: String(values["project-dir"]),
     port: Number(values["port"] ?? 0),
+    allowRemote: values["allow-remote"],
     ...(entryPath ? { entryPath } : {}),
   });
   const shutdown = () => {

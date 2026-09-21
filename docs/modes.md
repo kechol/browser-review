@@ -47,16 +47,26 @@ upgrades are tunnelled byte for byte, so hot module reload keeps working.
 
 ### Things worth knowing
 
-**Only localhost.** `http://localhost`, `http://127.0.0.1` and `http://[::1]`
-are accepted; anything else is refused with an explanation. Injecting a review
-overlay into a site you do not run would mean proxying someone else's origin.
+**Localhost by default.** `http://localhost`, `http://127.0.0.1` and
+`http://[::1]` keep their existing behavior without another option. A trusted,
+self-managed staging origin can be selected explicitly:
+
+```sh
+browser-review open https://staging.example.test/admin --allow-remote
+```
+
+Remote mode accepts one HTTPS origin, rejects URL userinfo and special-use DNS
+answers, and pins the validated startup answer set. `Host`, TLS SNI and normal
+certificate verification use the original hostname for HTTPS and WSS. There is
+no HTTP-remote or insecure-TLS option. The review server itself still binds only
+to `127.0.0.1`.
 
 **`Content-Security-Policy` is removed.** A dev server's policy is written for
 its own origin and would block the overlay. The header is dropped from proxied
 responses and a line is written to the server log the first time it happens.
-This is a loopback-only review tool and the trade is deliberate, but it is a
-real difference from how your app normally runs — if you are testing CSP
-behaviour, test it without the proxy.
+The trade is deliberate, but it is a real difference from how your app normally
+runs — if you are testing CSP behaviour, test it without the proxy. For a remote
+target, this is also why the origin and every script it serves must be trusted.
 
 **Responses are buffered, not streamed, when they are HTML.** The body has to be
 readable to have the overlay put into it. `Accept-Encoding: identity` is sent
@@ -66,6 +76,10 @@ streamed HTML (server-sent rendering that trickles out) will arrive all at once.
 **Redirects are rewritten.** A `Location` pointing at the upstream comes back
 pointing at the review server, matched by port rather than by hostname — dev
 servers told to listen on `localhost` routinely answer with `127.0.0.1`.
+Remote redirects are stricter: only root-relative redirects and absolute or
+protocol-relative redirects to the exact selected origin are rewritten.
+Cross-origin and HTTPS-to-HTTP redirects leave the proxy and receive none of the
+session-only staging credentials.
 
 **Control routes live under `__br/`.** The session's own endpoints are at
 `/r/<token>/__br/…` rather than `/r/<token>/…`, so an application route named
@@ -93,6 +107,36 @@ never the control token; it is stripped before forwarding to the upstream.
 Requests without that cookie still need the URL token. Control endpoints
 remain exclusively under `/r/<token>/__br/`; the cookie cannot authorize them.
 Cookie names include the review port to keep concurrent sessions separate.
+
+### Remote credentials and cookies
+
+Remote mode never forwards the browser's cookies, `Authorization`, `Referer`, or
+forwarding headers. It rewrites only a valid review-server `Origin` to the
+selected upstream origin. Upstream cookies stay in a memory-only jar for that
+session and are applied using Domain, Path, Secure, expiry, and deletion rules;
+they are not stored by the browser against loopback. The same rules cover HTTP
+and WebSocket handshakes. Upstream authentication challenges, site-data clears,
+and reporting configuration are also removed from browser responses.
+
+For Basic or Bearer staging authentication, set one value in the environment
+before starting the session, for example through your shell's secret-management
+workflow:
+
+```sh
+export BROWSER_REVIEW_REMOTE_AUTHORIZATION='Bearer replace-with-staging-token'
+browser-review open https://staging.example.test/admin --allow-remote
+unset BROWSER_REVIEW_REMOTE_AUTHORIZATION
+```
+
+The credential is inherited by the detached review process but is not placed in
+its command line, session file, logs, MCP output, or errors. Prefer a read-only
+staging account. The proxy does not promise that browsing is read-only: login
+and application mutations are both ordinary HTTP requests.
+
+Remote mode is not a content sandbox. The target page and its scripts can see
+the tokenized path and reach the review control API. Absolute URLs in HTML or
+JavaScript are not rewritten and may be fetched directly by the browser. Use it
+only with a staging origin that you own, administer, and trust.
 
 Applications that inspect their initial pathname still see the review prefix.
 Configure the router base accordingly; the proxy does not rewrite application

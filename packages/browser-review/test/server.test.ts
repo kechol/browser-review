@@ -296,6 +296,73 @@ describe("proxy mode", () => {
   });
 });
 
+describe("remote proxy server boundary", () => {
+  const remoteOptions = () => ({
+    id: `REMOTE${Date.now()}${Math.random().toString(36).slice(2)}`.toUpperCase(),
+    token: token(),
+    mode: "proxy" as const,
+    target: "https://staging.example.test",
+    projectDir: pageDir,
+    port: 0,
+  });
+
+  it("repeats opt-in, HTTPS and userinfo checks inside __serve", async () => {
+    await expect(startReviewServer(remoteOptions())).rejects.toThrow(/--allow-remote/);
+    await expect(
+      startReviewServer({
+        ...remoteOptions(),
+        target: "http://staging.example.test",
+        allowRemote: true,
+      }),
+    ).rejects.toThrow(/must use https/);
+    await expect(
+      startReviewServer({
+        ...remoteOptions(),
+        target: "https://user:secret@staging.example.test",
+        allowRemote: true,
+      }),
+    ).rejects.toThrow(/username or password/);
+  });
+
+  it("rejects an unsafe DNS answer before opening the review server", async () => {
+    await expect(
+      startReviewServer({
+        ...remoteOptions(),
+        allowRemote: true,
+        resolveHostname: async () => [{ address: "::ffff:127.0.0.1", family: 6 }],
+      }),
+    ).rejects.toThrow(/loopback/);
+  });
+
+  it("starts for a validated pinned set without persisting credentials or pins", async () => {
+    let resolutions = 0;
+    const options = remoteOptions();
+    const running = await startReviewServer({
+      ...options,
+      allowRemote: true,
+      remoteAuthorization: "Bearer memory-only-test-value",
+      resolveHostname: async () => {
+        resolutions += 1;
+        return [
+          { address: "192.0.2.40", family: 4 },
+          { address: "2001:db8::40", family: 6 },
+        ];
+      },
+    });
+    try {
+      expect(resolutions).toBe(1);
+      const stored = await readSessionFile(options.id);
+      expect(stored?.session.target).toBe("https://staging.example.test");
+      const serialized = JSON.stringify(stored);
+      expect(serialized).not.toContain("memory-only-test-value");
+      expect(serialized).not.toContain("192.0.2.40");
+      expect(serialized).not.toContain("2001:db8::40");
+    } finally {
+      await running.close();
+    }
+  });
+});
+
 it("rejects symlinks escaping the static root and malformed paths", async () => {
   const outside = path.join(stateHome, "secret.txt");
   await fs.writeFile(outside, "private fixture");
