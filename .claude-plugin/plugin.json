@@ -7,8 +7,8 @@
     "name": "kechol",
     "url": "https://github.com/kechol"
   },
-  "homepage": "https://github.com/kechol/browser-review-plugin#readme",
-  "repository": "https://github.com/kechol/browser-review-plugin",
+  "homepage": "https://github.com/kechol/browser-review#readme",
+  "repository": "https://github.com/kechol/browser-review",
   "license": "Apache-2.0",
   "keywords": ["review", "browser", "annotation", "frontend", "localhost", "mcp"]
 }

@@ -4,13 +4,13 @@
   "description": "Point at an element in your browser, leave a comment, and let your local coding agent fix the code behind it.",
   "license": "Apache-2.0",
   "author": "kechol",
-  "homepage": "https://github.com/kechol/browser-review-plugin#readme",
+  "homepage": "https://github.com/kechol/browser-review#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kechol/browser-review-plugin.git",
+    "url": "git+https://github.com/kechol/browser-review.git",
     "directory": "packages/browser-review"
   },
-  "bugs": "https://github.com/kechol/browser-review-plugin/issues",
+  "bugs": "https://github.com/kechol/browser-review/issues",
   "keywords": [
     "claude-code",
     "mcp",

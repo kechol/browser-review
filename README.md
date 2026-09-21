@@ -42,7 +42,7 @@ repository open where the code actually lives.
 ### 1. As a Claude Code plugin (recommended)
 
 ```
-/plugin marketplace add kechol/browser-review-plugin
+/plugin marketplace add kechol/browser-review
 /plugin install browser-review@browser-review
 ```
 
@@ -53,15 +53,15 @@ without asking.
 ### 2. From a clone, for development
 
 ```sh
-git clone https://github.com/kechol/browser-review-plugin.git
-cd browser-review-plugin && npm install && npm run build
+git clone https://github.com/kechol/browser-review.git
+cd browser-review && npm install && npm run build
 ```
 
 Then add the clone as a local marketplace. Local marketplaces are loaded in
 place, so a rebuild is picked up without reinstalling:
 
 ```
-/plugin marketplace add ./browser-review-plugin
+/plugin marketplace add ./browser-review
 /plugin install browser-review@browser-review
 ```
 

@@ -12,8 +12,8 @@ setup, the checks that must pass, and how changes get released.
 ## Getting set up
 
 ```sh
-git clone https://github.com/kechol/browser-review-plugin.git
-cd browser-review-plugin
+git clone https://github.com/kechol/browser-review.git
+cd browser-review
 npm install
 npm run build
 ```
@@ -35,7 +35,7 @@ local marketplace. It is loaded in place, so a rebuild is picked up without
 reinstalling:
 
 ```
-/plugin marketplace add ./path/to/browser-review-plugin
+/plugin marketplace add ./path/to/browser-review
 /plugin install browser-review@browser-review
 ```
 

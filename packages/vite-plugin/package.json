@@ -4,13 +4,13 @@
   "description": "Vite plugin that tags JSX elements with data-review-src so browser-review can jump straight to the source line.",
   "license": "Apache-2.0",
   "author": "kechol",
-  "homepage": "https://github.com/kechol/browser-review-plugin#readme",
+  "homepage": "https://github.com/kechol/browser-review#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kechol/browser-review-plugin.git",
+    "url": "git+https://github.com/kechol/browser-review.git",
     "directory": "packages/vite-plugin"
   },
-  "bugs": "https://github.com/kechol/browser-review-plugin/issues",
+  "bugs": "https://github.com/kechol/browser-review/issues",
   "keywords": [
     "vite-plugin",
     "jsx",
