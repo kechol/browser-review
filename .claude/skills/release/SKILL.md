@@ -17,13 +17,14 @@ Resolve all commands from the repository root.
   the release version. Do not apply kura's single-package version algorithm.
 - Pushes to `main` let Changesets prepare a version PR on
   `changeset-release/main`. Merging it does not publish npm packages.
-- A maintainer dispatches `release.yml` on `main` with `publish=true` to publish
-  npm packages. First publication may also need `bootstrap=true`; subsequent
-  releases use npm Trusted Publishing. See the publishing guide for setup.
-- After npm publication, the maintainer pushes `v<CLI-version>` at the published
-  commit. The Homebrew job uses the `release` Environment and its
-  `HOMEBREW_TAP_TOKEN`. Changesets' `browser-review@<version>` tags do not trigger
-  that job. A Vite-only release normally needs no new Homebrew tag.
+- A maintainer pushes `v<CLI-version>` at the versioned main commit to publish
+  npm packages, then update Homebrew. First publication uses the temporary
+  repository secret `NPM_BOOTSTRAP_TOKEN` while it exists; remove it after
+  configuring npm Trusted Publishing. There is no bootstrap workflow input.
+- Homebrew depends on successful npm publication and uses the `release`
+  Environment and its `HOMEBREW_TAP_TOKEN`. Changesets' package-specific tags
+  do not trigger publication. Do not reuse a CLI tag for a Vite-only release;
+  identify that limitation when preparing an independently versioned update.
 
 This skill does not merge PRs, create or push tags, dispatch publication
 workflows, run `pnpm run release`, or update the tap. Push a preparation branch
@@ -131,14 +132,14 @@ and commit if no PR was authorized. Include remaining checks and these next
 steps, without executing them:
 
 1. Review and merge the version PR after its required checks pass.
-2. Dispatch Release on the versioned `main` with `publish=true`; use the
-   first-publication bootstrap procedure only if needed.
-3. Verify the expected versions and provenance on npm. Record the actual
-   published commit before tagging; do not assume a later `main` HEAD is it.
-4. If the CLI changed, push its matching stable `v<CLI-version>` tag on that
-   commit. Verify the Homebrew job and tap update, or download the formula
-   artifact when the Environment secret is absent. No tag is needed solely
-   for a Vite plugin update.
+2. Confirm that the selected main commit contains the tag-triggered workflow,
+   the intended CLI version, and no pending changesets. An older commit runs
+   its older workflow even if the default branch now has a newer one.
+3. Push the matching stable `v<CLI-version>` tag on that commit. The workflow
+   publishes missing npm package versions, then updates Homebrew.
+4. Verify expected versions and provenance on npm and the Homebrew job/tap
+   result. For a partial npm failure, record which packages succeeded and
+   resolve credentials before retrying the same tag; never unpublish to retry.
 
 Publication remains the maintainer's action. Do not rerun an older tag or
 rewrite a published tag to recover a failure; use the publishing guide's
