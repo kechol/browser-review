@@ -1,5 +1,7 @@
 # browser-review
 
+English | [日本語](README.ja.md)
+
 Point at something in your browser, say what is wrong with it, and let the
 coding agent already running on your machine find and fix the code behind it.
 
