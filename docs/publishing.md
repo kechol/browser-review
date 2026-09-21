@@ -34,11 +34,20 @@ corresponding external setup has been checked.
 ## 1. Prepare the release
 
 The Release workflow runs on pushes to `main` to prepare a version pull request.
-It publishes only when manually dispatched on `main` with `publish: true`.
+It publishes npm packages only when manually dispatched on `main` with
+`publish: true`. Stable `v*` tags trigger the separate Homebrew job after npm
+publication; they do not publish npm packages.
 Enable **Allow GitHub Actions to create and approve pull requests** in the
 repository's Actions settings for Changesets to create that PR. Review and
 merge it after CI passes. Bot-created PRs may require a maintainer to trigger
 CI according to the repository's Actions policy.
+
+If Release fails with `GitHub Actions is not permitted to create or approve
+pull requests`, open **Settings → Actions → General → Workflow permissions**,
+enable that checkbox and save. The workflow already requests
+`pull-requests: write`; that permission does not override this repository
+setting. Rerun the failed job after enabling it. Do not use a personal token
+to bypass the setting.
 
 The initial changesets include a minor bump from `0.1.0`; inspect the generated
 versions instead of assuming that the first publication will be `0.1.0`.
@@ -96,13 +105,13 @@ and rerun for the missing version. npm versions cannot be overwritten.
 
 In each package's npm settings, add a GitHub Actions trusted publisher:
 
-| Setting              | Value                                           |
-| -------------------- | ----------------------------------------------- |
-| Organization or user | `kechol`                                        |
-| Repository           | `browser-review`                                |
-| Workflow filename    | `release.yml`                                   |
-| Environment          | Leave empty; this workflow does not declare one |
-| Allowed actions      | Enable direct `npm publish`                     |
+| Setting              | Value                                         |
+| -------------------- | --------------------------------------------- |
+| Organization or user | `kechol`                                      |
+| Repository           | `browser-review`                              |
+| Workflow filename    | `release.yml`                                 |
+| Environment          | Leave empty; the npm job does not declare one |
+| Allowed actions      | Enable direct `npm publish`                   |
 
 The GitHub-hosted job has `id-token: write`. Package metadata requests
 provenance; keep the repository public. The workflow uses pinned pnpm through
@@ -127,7 +136,7 @@ npm view @browser-review/vite-plugin version --registry=https://registry.npmjs.o
 Check both npm package pages for provenance and run `browser-review --help`
 from an installation of the intended version in a disposable environment.
 
-## 3. Generate and publish the Homebrew formula
+## 3. Update the Homebrew tap
 
 The tap is [kechol/homebrew-tap](https://github.com/kechol/homebrew-tap).
 The formula uses the compiled npm archive, Node.js and npm runtime dependencies;
@@ -135,6 +144,57 @@ it does not compile the monorepo or install the Claude Code plugin. No bottles
 or per-architecture binaries are required. Homebrew installation needs network
 access for npm dependencies. Dependency ranges are resolved at installation
 time; the archive checksum pins the CLI tarball, not the whole dependency tree.
+
+### Automatic updates
+
+Like kura's release workflow, this repository can update the tap after a stable
+release when `HOMEBREW_TAP_TOKEN` is configured:
+
+1. Create a fine-grained GitHub token scoped only to `kechol/homebrew-tap`, with
+   **Contents: Read and write**. The tap must permit that identity to push to
+   its default branch. Use an expiration and rotate it when needed.
+2. In `kechol/browser-review`, create the GitHub Environment **release**, allow
+   deployment tags matching `v*`, and add its Environment secret
+   `HOMEBREW_TAP_TOKEN`. The Homebrew job declares `environment: release` to
+   access it. The repository's default `GITHUB_TOKEN` cannot write to the tap.
+3. Publish npm from `main` as described above, then verify the published CLI
+   version and create its matching stable tag on that release commit:
+
+   ```sh
+   # Replace the example version and commit with the verified npm release.
+   git tag -s v0.2.0 <release-commit> -m "browser-review 0.2.0"
+   git push origin v0.2.0
+   ```
+
+   Use the CLI version, which can differ from the Vite plugin version.
+   Changesets' package tags (such as `browser-review@0.2.0`) do not trigger this
+   job. The `v0.2.0` tag is the maintainer's separate Homebrew publication step.
+
+On the stable `v*` tag, the **Update Homebrew tap** job verifies that the tag
+matches the CLI package version, downloads that exact version's npm archive, generates
+and syntax-checks the formula, and uploads a `homebrew-formula` artifact. With
+the token configured, it commits only `Formula/browser-review.rb` to the tap's
+default branch and pushes it. An unchanged formula creates no commit.
+
+Without the token, formula generation still runs and the artifact is available,
+but the tap push is skipped with a notice. Prereleases do not update the stable
+formula. A mismatched tag or an unavailable npm archive fails before the tap
+is modified. Push the tag only after successful npm publication.
+The token is used only in the Homebrew job, not in package builds or npm publishing.
+
+If the tap job fails, correct the token or tap problem and rerun that job.
+You may also dispatch Release on the same tag without republishing npm:
+
+```sh
+gh workflow run release.yml --ref v0.2.0 -f publish=true -f bootstrap=false
+```
+
+Do not rerun an older release to roll the tap back unintentionally. CI checks
+Ruby syntax; verify Homebrew installation with the commands below before
+describing the tap installation as tested. Add the install command to the tap
+README separately on its first release.
+
+### Manual generation and installation checks
 
 After npm publication, run the following from this repository. Set the version
 to the exact release you just verified (the number below is an example):
@@ -175,15 +235,16 @@ disables lifecycle scripts because the archive is prebuilt and the package's
 repository-only `prepack` helper is not distributed. Follow the
 [Homebrew Node formula guidance](https://docs.brew.sh/Language-Specific-Formulae#nodejs).
 
-Commit the reviewed formula and README in `kechol/homebrew-tap` and push them
-when ready. This is a separate publication from the npm release. End users can
-then run:
+If using the manual path, commit the reviewed formula and README in
+`kechol/homebrew-tap` and push them when ready. With automatic updates, the
+workflow handles the formula commit. End users can then run:
 
 ```sh
 brew install kechol/tap/browser-review
 browser-review --help
 ```
 
-For later releases, repeat the download, generation, tap tests and tap commit.
+For later releases, the configured workflow handles formula updates; without
+the token, repeat the manual download, generation, tap tests and tap commit.
 Users update with `brew update && brew upgrade browser-review`. Publication and
 installation are not considered verified until these external steps succeed.

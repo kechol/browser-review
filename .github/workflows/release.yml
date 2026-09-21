@@ -3,10 +3,11 @@ name: Release
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       publish:
-        description: Publish the versioned packages to npm
+        description: Publish npm on main, or update Homebrew on a v* tag
         type: boolean
         default: false
       bootstrap:
@@ -68,3 +69,86 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ github.event_name == 'workflow_dispatch' && inputs.publish && inputs.bootstrap && secrets.NPM_BOOTSTRAP_TOKEN || '' }}
+
+  homebrew:
+    name: Update Homebrew tap
+    # The release Environment only permits v* tags. npm is published separately
+    # from main before the maintainer pushes the corresponding stable CLI tag.
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') && (github.event_name == 'push' || inputs.publish)
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Select stable CLI version
+        id: cli
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, appendFileSync } from 'node:fs';
+          const { version } = JSON.parse(readFileSync('packages/browser-review/package.json', 'utf8'));
+          const stable = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version);
+          if (!stable || process.env.TAG !== `v${version}`) {
+            throw new Error('Expected a stable v<version> tag matching the CLI package.json');
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, `stable=true\nversion=${version}\n`);
+          NODE
+      - name: Generate formula from the published npm archive
+        if: steps.cli.outputs.stable == 'true'
+        env:
+          VERSION: ${{ steps.cli.outputs.version }}
+        run: |
+          mkdir -p .output/homebrew
+          curl --fail --location --proto '=https' --proto-redir '=https' \
+            --retry 5 --retry-all-errors --retry-delay 10 \
+            "https://registry.npmjs.org/browser-review/-/browser-review-${VERSION}.tgz" \
+            --output .output/homebrew/browser-review.tgz
+          pnpm homebrew:formula .output/homebrew/browser-review.tgz
+          ruby -c .output/homebrew/browser-review.rb
+      - uses: actions/upload-artifact@v7
+        if: steps.cli.outputs.stable == 'true'
+        with:
+          name: homebrew-formula
+          path: .output/homebrew/browser-review.rb
+          include-hidden-files: true
+          if-no-files-found: error
+      - name: Check tap credentials
+        if: steps.cli.outputs.stable == 'true'
+        id: tap
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [[ -n "$HOMEBREW_TAP_TOKEN" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::HOMEBREW_TAP_TOKEN is unset; download the homebrew-formula artifact to update the tap manually."
+          fi
+      - uses: actions/checkout@v7
+        if: steps.tap.outputs.enabled == 'true'
+        with:
+          repository: kechol/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: .output/homebrew-tap
+      - name: Publish Homebrew formula
+        if: steps.tap.outputs.enabled == 'true'
+        env:
+          VERSION: ${{ steps.cli.outputs.version }}
+        run: |
+          mkdir -p .output/homebrew-tap/Formula
+          cp .output/homebrew/browser-review.rb .output/homebrew-tap/Formula/browser-review.rb
+          cd .output/homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/browser-review.rb
+          if git diff --cached --quiet; then
+            echo "Formula unchanged; nothing to push."
+          else
+            git commit -s -m "chore: update browser-review to $VERSION"
+            git push
+          fi
