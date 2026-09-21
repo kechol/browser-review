@@ -16,6 +16,8 @@ const pkg = read("packages/browser-review/package.json");
 const mcp = read(".mcp.json");
 
 const problems = [];
+const [major, minor] = pkg.version.split(".");
+const expected = major === "0" ? `^0.${minor}.0` : `^${major}.0.0`;
 
 if (plugin.version !== pkg.version) {
   problems.push(
@@ -39,12 +41,21 @@ if (!spec) {
   problems.push(`.mcp.json does not start ${pkg.name}; the plugin would have no tools.`);
 } else {
   const range = spec.slice(pkg.name.length + 1);
-  const [major, minor] = pkg.version.split(".");
-  const expected = major === "0" ? `^0.${minor}.0` : `^${major}.0.0`;
   if (range !== expected) {
     problems.push(
       `.mcp.json pins ${spec}, but version ${pkg.version} wants ${pkg.name}@${expected}. ` +
         "Before 1.0 a minor bump is a breaking change, so the range tracks the minor.",
+    );
+  }
+}
+
+for (const name of ["open", "status", "close"]) {
+  const filename = `skills/${name}/SKILL.md`;
+  const source = readFileSync(path.join(ROOT, filename), "utf8");
+  const specs = source.match(/browser-review@[^\s`]+/g) ?? [];
+  if (specs.length === 0 || specs.some((value) => value !== `${pkg.name}@${expected}`)) {
+    problems.push(
+      `${filename} must invoke ${pkg.name}@${expected}. Run pnpm run version-packages when releasing.`,
     );
   }
 }

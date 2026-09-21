@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Run straight after `changeset version`. The plugin manifest, the marketplace
-// entry and the npx range in .mcp.json all restate the published package's
+// entry and the npx ranges in .mcp.json and CLI skills restate the package's
 // version; this copies it across so the release pull request carries them all.
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -35,5 +35,11 @@ mcp.mcpServers.review.args = args.map((arg) =>
   typeof arg === "string" && arg.startsWith(`${pkg.name}@`) ? `${pkg.name}@${range}` : arg,
 );
 write(".mcp.json", mcp);
+
+for (const name of ["open", "status", "close"]) {
+  const filename = path.join(ROOT, "skills", name, "SKILL.md");
+  const source = readFileSync(filename, "utf8");
+  writeFileSync(filename, source.replace(/browser-review@[^\s`]+/g, `${pkg.name}@${range}`));
+}
 
 console.log(`synced plugin metadata to ${pkg.version} (npx range ${range})`);

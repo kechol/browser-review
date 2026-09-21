@@ -26,7 +26,7 @@ Offer the alternative — run the site locally and point at that.
 ## 2. Start the server
 
 ```sh
-npx -y browser-review@^0.1.0 open <target> --project-dir "$CLAUDE_PROJECT_DIR" --json
+npx -y browser-review@^0.2.0 open <target> --project-dir "$CLAUDE_PROJECT_DIR" --json
 ```
 
 It prints one line of JSON: `sessionId`, `reviewUrl`, `handoffMcpUrl`,
