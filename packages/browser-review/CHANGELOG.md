@@ -1,5 +1,15 @@
 # browser-review
 
+## 0.3.0
+
+### Minor Changes
+
+- [#8](https://github.com/kechol/browser-review/pull/8) [`00faa9a`](https://github.com/kechol/browser-review/commit/00faa9a6e143bd53ac71dac6fa257b807b70c278) Thanks [@kechol](https://github.com/kechol)! - Add explicit, HTTPS-only proxy review for trusted staging origins with DNS pinning, normal TLS verification, and session-isolated credentials while preserving localhost defaults.
+
+### Patch Changes
+
+- [`f4c3026`](https://github.com/kechol/browser-review/commit/f4c302684f93e762dc36ff2ea846c6e662068d79) Thanks [@kechol](https://github.com/kechol)! - Fix Claude Code open, status and close skills to use the current CLI release range, and keep those ranges synchronized during version updates.
+
 ## 0.2.1
 
 ### Patch Changes
