@@ -34,9 +34,8 @@ corresponding external setup has been checked.
 ## 1. Prepare the release
 
 The Release workflow runs on pushes to `main` to prepare a version pull request.
-It publishes npm packages only when manually dispatched on `main` with
-`publish: true`. Stable `v*` tags trigger the separate Homebrew job after npm
-publication; they do not publish npm packages.
+A stable `v<CLI-version>` tag push publishes npm packages, then updates Homebrew
+only after npm publication succeeds. Main-branch pushes never publish.
 Enable **Allow GitHub Actions to create and approve pull requests** in the
 repository's Actions settings for Changesets to create that PR. Review and
 merge it after CI passes. Bot-created PRs may require a maintainer to trigger
@@ -90,16 +89,21 @@ configure them yet, bootstrap from the same Release workflow:
    current [token instructions](https://docs.npmjs.com/creating-and-viewing-access-tokens/).
 2. Save it as the GitHub Actions secret `NPM_BOOTSTRAP_TOKEN` in
    `kechol/browser-review`. Never put it in a committed file or command history.
-3. On the versioned `main` commit, open **Actions → Release → Run workflow**.
-   Enable both `publish` and `bootstrap`. This publishes all unpublished public
-   package versions, with provenance, and creates their tags/GitHub releases.
-4. Revoke the token and delete the secret after a successful run. Configure
-   Trusted Publishing for both packages before the next release.
+3. Ensure the tagged commit contains this tag-triggered workflow, no pending
+   changesets, and the intended versions. Push its matching tag as shown below.
+   The npm job uses `NPM_BOOTSTRAP_TOKEN` automatically while it is present.
+4. After both packages publish successfully, configure Trusted Publishing for
+   both, revoke the temporary token and delete the repository secret. Subsequent
+   tag releases use OIDC with no token.
 
-The bootstrap switch is opt-in; normal runs never use this secret. Do not run
-`pnpm run release` or `npm publish` from a laptop. A partial failure can leave
-one package published: inspect npm and the workflow output, correct the failure,
-and rerun for the missing version. npm versions cannot be overwritten.
+The token must cover the unscoped `browser-review` package as well as
+`@browser-review/vite-plugin`. Selecting only the `@browser-review` scope does
+not authorize creation of the unscoped package. For first creation of an
+unscoped package, use the token UI's **All Packages** setting with a short
+expiration, **Read and write (publish and stage)**, and the required bypass-2FA
+permission. Organization-management access alone is not package publish access.
+Never put the token in a file committed to Git. Do not run `pnpm run release`
+or `npm publish` from a laptop.
 
 ### Subsequent releases using Trusted Publishing
 
@@ -117,21 +121,46 @@ The GitHub-hosted job has `id-token: write`. Package metadata requests
 provenance; keep the repository public. The workflow uses pinned pnpm through
 Changesets. See [npm's OIDC configuration](https://docs.npmjs.com/trusted-publishers/).
 
-After merging the version PR and checking CI, run **Actions → Release → Run
-workflow** on `main` with `publish` enabled and `bootstrap` disabled. Alternatively:
+After merging the version PR and checking CI on the release commit, create and
+push the matching stable CLI tag (replace the example commit and version):
 
 ```sh
-gh workflow run release.yml --ref main -f publish=true -f bootstrap=false
+git tag -s v0.2.1 <release-commit> -m "browser-review 0.2.1"
+git push origin v0.2.1
 ```
 
-If pending changesets still exist, the action prepares a version PR instead of
-publishing; merge that PR and dispatch again. Check the job result and the public
-registry before moving on:
+The tagged commit must already contain the new workflow: tagging a previous
+merge commit runs the workflow stored at that older commit. When migrating
+from the former manual npm workflow, tag a later main commit that includes
+this workflow change and still carries the intended package versions. Do not
+rewrite published history or move an existing tag to retrofit the workflow.
+
+The publish job checks that the commit belongs to `main`, its stable tag equals
+`v` plus the CLI version, and no unconsumed changesets remain. Prerelease tags
+are skipped. Changesets publishes only missing npm versions. This release
+scheme is keyed to the CLI version; a Vite-only bump with an already-used CLI
+tag needs a separately planned release path, not a reused tag.
+
+Check the job result and exact public registry versions:
 
 ```sh
-npm view browser-review version dist.tarball dist.integrity --registry=https://registry.npmjs.org
-npm view @browser-review/vite-plugin version --registry=https://registry.npmjs.org
+npm view browser-review@0.2.1 version dist.tarball dist.integrity --registry=https://registry.npmjs.org
+npm view @browser-review/vite-plugin@0.2.0 version --registry=https://registry.npmjs.org
 ```
+
+A failed job can still have published one package. Inspect its log and registry
+state before retrying; do not unpublish or bump versions just to recover. A 403
+for only the unscoped package commonly indicates a token limited to the org
+scope. Correct the token permissions and update the repository secret. Rerun
+the failed jobs or dispatch the same stable tag:
+
+```sh
+gh workflow run release.yml --ref v0.2.1 -f publish=true
+```
+
+There is no `bootstrap` input. The repository secret selects first-publication
+authentication; remove it after configuring OIDC. A retry skips versions
+already published and runs Homebrew only when npm publication succeeds.
 
 Check both npm package pages for provenance and run `browser-review --help`
 from an installation of the intended version in a disposable environment.
@@ -157,21 +186,12 @@ release when `HOMEBREW_TAP_TOKEN` is configured:
    deployment tags matching `v*`, and add its Environment secret
    `HOMEBREW_TAP_TOKEN`. The Homebrew job declares `environment: release` to
    access it. The repository's default `GITHUB_TOKEN` cannot write to the tap.
-3. Publish npm from `main` as described above, then verify the published CLI
-   version and create its matching stable tag on that release commit:
+3. Push the stable release tag as described above. The same workflow publishes
+   npm first; `needs: publish` then allows the Homebrew job to proceed.
+   Changesets' package tags (such as `browser-review@0.2.1`) do not trigger
+   another release.
 
-   ```sh
-   # Replace the example version and commit with the verified npm release.
-   git tag -s v0.2.0 <release-commit> -m "browser-review 0.2.0"
-   git push origin v0.2.0
-   ```
-
-   Use the CLI version, which can differ from the Vite plugin version.
-   Changesets' package tags (such as `browser-review@0.2.0`) do not trigger this
-   job. The `v0.2.0` tag is the maintainer's separate Homebrew publication step.
-
-On the stable `v*` tag, the **Update Homebrew tap** job verifies that the tag
-matches the CLI package version, downloads that exact version's npm archive, generates
+The **Update Homebrew tap** job downloads the published CLI archive, generates
 and syntax-checks the formula, and uploads a `homebrew-formula` artifact. With
 the token configured, it commits only `Formula/browser-review.rb` to the tap's
 default branch and pushes it. An unchanged formula creates no commit.
@@ -179,14 +199,14 @@ default branch and pushes it. An unchanged formula creates no commit.
 Without the token, formula generation still runs and the artifact is available,
 but the tap push is skipped with a notice. Prereleases do not update the stable
 formula. A mismatched tag or an unavailable npm archive fails before the tap
-is modified. Push the tag only after successful npm publication.
+is modified. If npm publication fails, the Homebrew job is skipped.
 The token is used only in the Homebrew job, not in package builds or npm publishing.
 
 If the tap job fails, correct the token or tap problem and rerun that job.
-You may also dispatch Release on the same tag without republishing npm:
+You may also dispatch Release on the same tag; npm skips existing versions:
 
 ```sh
-gh workflow run release.yml --ref v0.2.0 -f publish=true -f bootstrap=false
+gh workflow run release.yml --ref v0.2.1 -f publish=true
 ```
 
 Do not rerun an older release to roll the tap back unintentionally. CI checks
@@ -200,7 +220,7 @@ After npm publication, run the following from this repository. Set the version
 to the exact release you just verified (the number below is an example):
 
 ```sh
-release_version=0.2.0
+release_version=0.2.1
 mkdir -p .output/homebrew
 curl --fail --location --proto '=https' --proto-redir '=https' \
   "https://registry.npmjs.org/browser-review/-/browser-review-${release_version}.tgz" \

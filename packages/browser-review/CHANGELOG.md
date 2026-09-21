@@ -1,5 +1,11 @@
 # browser-review
 
+## 0.2.1
+
+### Patch Changes
+
+- Publish stable CLI releases from version tags and update Homebrew only after npm publication succeeds.
+
 ## 0.2.0
 
 ### Minor Changes

@@ -1,6 +1,6 @@
 {
   "name": "browser-review",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Point at an element in your browser, leave a comment, and let your local coding agent fix the code behind it.",
   "license": "Apache-2.0",
   "author": "kechol",

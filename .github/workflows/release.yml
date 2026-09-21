@@ -7,11 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Publish npm on main, or update Homebrew on a v* tag
-        type: boolean
-        default: false
-      bootstrap:
-        description: Use the temporary NPM_BOOTSTRAP_TOKEN for first publication only
+        description: Retry npm publication and Homebrew update on a stable v* tag
         type: boolean
         default: false
 
@@ -23,16 +19,13 @@ permissions:
   contents: read
 
 jobs:
-  release:
-    name: Version or publish
+  version:
+    name: Prepare version pull request
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
-      # Normal releases use npm Trusted Publishing. A temporary secret is used
-      # only when a maintainer explicitly selects first-publication bootstrap.
-      id-token: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -52,29 +45,67 @@ jobs:
       - run: pnpm run check:versions
       - run: pnpm run license-check
 
-      - name: Validate first-publication credentials
-        if: github.event_name == 'workflow_dispatch' && inputs.publish && inputs.bootstrap
-        run: test -n "$NODE_AUTH_TOKEN"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_BOOTSTRAP_TOKEN }}
-
-      - name: Create a version pull request, or publish
+      - name: Create or update the version pull request
         uses: changesets/action@v2
         with:
           version-script: pnpm run version-packages
-          # Pushes only prepare the version PR. Publication is an explicit dispatch.
-          publish-script: ${{ github.event_name == 'workflow_dispatch' && inputs.publish && 'pnpm run release' || '' }}
           commit-message: "chore: version packages"
           pr-title: "chore: version packages"
+
+  publish:
+    name: Publish npm packages
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') && (github.event_name == 'push' || inputs.publish)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Validate release tag and versioned tree
+        id: release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ github.event_name == 'workflow_dispatch' && inputs.publish && inputs.bootstrap && secrets.NPM_BOOTSTRAP_TOKEN || '' }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          git merge-base --is-ancestor HEAD origin/main
+          node --input-type=module <<'NODE'
+          import { readFileSync, readdirSync, appendFileSync } from 'node:fs';
+          const { version } = JSON.parse(readFileSync('packages/browser-review/package.json', 'utf8'));
+          if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version) || process.env.TAG !== `v${version}`) {
+            throw new Error('Expected a stable v<version> tag matching the CLI package.json');
+          }
+          if (readdirSync('.changeset').some(name => name.endsWith('.md') && name !== 'README.md')) {
+            throw new Error('Merge the version PR before tagging: pending changesets remain');
+          }
+          appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
+          NODE
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm test
+      - run: pnpm run check:packages
+      - run: pnpm run check:versions
+      - run: pnpm run license-check
+      - name: Publish versioned packages
+        uses: changesets/action@v2
+        with:
+          publish-script: pnpm run release
+        env:
+          # First publication uses this short-lived repository secret. Remove it
+          # after configuring Trusted Publishing; an empty value allows OIDC.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_BOOTSTRAP_TOKEN }}
 
   homebrew:
     name: Update Homebrew tap
-    # The release Environment only permits v* tags. npm is published separately
-    # from main before the maintainer pushes the corresponding stable CLI tag.
-    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') && (github.event_name == 'push' || inputs.publish)
+    needs: publish
     runs-on: ubuntu-latest
     environment: release
     steps:
@@ -85,24 +116,9 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - name: Select stable CLI version
-        id: cli
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          node --input-type=module <<'NODE'
-          import { readFileSync, appendFileSync } from 'node:fs';
-          const { version } = JSON.parse(readFileSync('packages/browser-review/package.json', 'utf8'));
-          const stable = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version);
-          if (!stable || process.env.TAG !== `v${version}`) {
-            throw new Error('Expected a stable v<version> tag matching the CLI package.json');
-          }
-          appendFileSync(process.env.GITHUB_OUTPUT, `stable=true\nversion=${version}\n`);
-          NODE
       - name: Generate formula from the published npm archive
-        if: steps.cli.outputs.stable == 'true'
         env:
-          VERSION: ${{ steps.cli.outputs.version }}
+          VERSION: ${{ needs.publish.outputs.version }}
         run: |
           mkdir -p .output/homebrew
           curl --fail --location --proto '=https' --proto-redir '=https' \
@@ -112,14 +128,12 @@ jobs:
           pnpm homebrew:formula .output/homebrew/browser-review.tgz
           ruby -c .output/homebrew/browser-review.rb
       - uses: actions/upload-artifact@v7
-        if: steps.cli.outputs.stable == 'true'
         with:
           name: homebrew-formula
           path: .output/homebrew/browser-review.rb
           include-hidden-files: true
           if-no-files-found: error
       - name: Check tap credentials
-        if: steps.cli.outputs.stable == 'true'
         id: tap
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -138,7 +152,7 @@ jobs:
       - name: Publish Homebrew formula
         if: steps.tap.outputs.enabled == 'true'
         env:
-          VERSION: ${{ steps.cli.outputs.version }}
+          VERSION: ${{ needs.publish.outputs.version }}
         run: |
           mkdir -p .output/homebrew-tap/Formula
           cp .output/homebrew/browser-review.rb .output/homebrew-tap/Formula/browser-review.rb

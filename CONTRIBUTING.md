@@ -85,9 +85,9 @@ Pick the affected packages and the bump level, and describe the change in one or
 two sentences — the text lands verbatim in `CHANGELOG.md`.
 
 Releases are cut by maintainers: merging the "Version Packages" pull request
-prepares the release. A maintainer then runs the Release workflow on `main` with
-`publish` enabled to tag and publish from GitHub Actions using npm Trusted
-Publishing with provenance. **Nobody publishes from a laptop.** When the
+prepares the release. A maintainer then pushes a matching stable
+`v<CLI-version>` tag to publish npm from GitHub Actions, followed by Homebrew.
+After first-publication bootstrap, npm uses Trusted Publishing with provenance. **Nobody publishes from a laptop.** When the
 version of `packages/browser-review` changes, `.claude-plugin/plugin.json` must
 be bumped in the same pull request; `pnpm run check:versions` enforces this.
 
