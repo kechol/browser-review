@@ -47,7 +47,7 @@
     "provenance": true
   },
   "dependencies": {
-    "@babel/parser": "^7.29.9"
+    "@babel/parser": "^8.0.5"
   },
   "devDependencies": {
     "@types/babel__core": "^7.20.5",
