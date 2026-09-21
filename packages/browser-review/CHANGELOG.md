@@ -1,5 +1,11 @@
 # browser-review
 
+## 0.3.1
+
+### Patch Changes
+
+- [#9](https://github.com/kechol/browser-review/pull/9) [`ccad11d`](https://github.com/kechol/browser-review/commit/ccad11d2351404433d939d1b694d32654fbacd5b) Thanks [@kechol](https://github.com/kechol)! - Fix CLI startup through npm, npx and Homebrew symlinks. Verify packaged CLI entrypoints and allow more time for npm archive availability before updating Homebrew.
+
 ## 0.3.0
 
 ### Minor Changes

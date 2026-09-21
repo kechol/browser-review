@@ -1,7 +1,7 @@
 {
   "name": "browser-review",
   "displayName": "Browser Review",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Review a local page, localhost app, or explicitly trusted HTTPS staging origin, then have Claude Code find and fix the code behind your comments.",
   "author": {
     "name": "kechol",
