@@ -55,6 +55,13 @@ test.each(["0.3.0", "1.2.0"])("synchronizes CLI skills when releasing %s", (vers
   const pkg = JSON.parse(readFileSync(filename, "utf8"));
   pkg.version = version;
   writeFileSync(filename, JSON.stringify(pkg));
+  for (const name of ["open", "status", "close"]) {
+    const skill = path.join(directory, "skills", name, "SKILL.md");
+    writeFileSync(
+      skill,
+      readFileSync(skill, "utf8").replace(/browser-review@[^\s`]+/g, "browser-review@^9.9.0"),
+    );
+  }
   expect(check(directory).status).toBe(1);
   execFileSync(process.execPath, [path.join(directory, "scripts/sync-plugin-version.mjs")]);
   expect(check(directory).status).toBe(0);
