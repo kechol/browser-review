@@ -1,7 +1,7 @@
 {
   "name": "browser-review",
   "displayName": "Browser Review",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Point at an element in your browser, leave a comment, and have Claude Code find and fix the code behind it. Works on a local HTML file or any localhost dev server.",
   "author": {
     "name": "kechol",
