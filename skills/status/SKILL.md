@@ -9,7 +9,7 @@ allowed-tools: Bash(npx browser-review:*), Bash(browser-review:*)
 Run:
 
 ```sh
-npx -y browser-review@^0.2.0 status --json
+npx -y browser-review@^0.3.0 status --json
 ```
 
 It prints `{"sessions": [...]}`, one entry per running session, each with
