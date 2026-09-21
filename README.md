@@ -48,6 +48,25 @@ repository open where the code actually lives.
 
 ## Install
 
+The npm and Homebrew commands below apply after the first releases have been
+published. Maintainers should follow [the publishing guide](docs/publishing.md).
+
+For a standalone CLI (Node.js 24 or newer):
+
+```sh
+npm install --global browser-review
+```
+
+Or install the CLI and Node.js through Homebrew:
+
+```sh
+brew install kechol/tap/browser-review
+```
+
+The Homebrew formula installs the CLI. Register the Claude Code plugin separately
+if you want its commands and hooks. The optional Vite integration is installed
+in the application with `npm install --save-dev @browser-review/vite-plugin`.
+
 ### 1. As a Claude Code plugin (recommended)
 
 ```

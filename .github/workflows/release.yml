@@ -3,6 +3,16 @@ name: Release
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the versioned packages to npm
+        type: boolean
+        default: false
+      bootstrap:
+        description: Use the temporary NPM_BOOTSTRAP_TOKEN for first publication only
+        type: boolean
+        default: false
 
 concurrency:
   group: release
@@ -14,13 +24,13 @@ permissions:
 jobs:
   release:
     name: Version or publish
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
-      # Required for npm Trusted Publishing: the registry accepts the job's
-      # OIDC identity instead of a long-lived token, so no npm secret exists
-      # in this repository to leak.
+      # Normal releases use npm Trusted Publishing. A temporary secret is used
+      # only when a maintainer explicitly selects first-publication bootstrap.
       id-token: write
     steps:
       - uses: actions/checkout@v7
@@ -41,12 +51,20 @@ jobs:
       - run: pnpm run check:versions
       - run: pnpm run license-check
 
+      - name: Validate first-publication credentials
+        if: github.event_name == 'workflow_dispatch' && inputs.publish && inputs.bootstrap
+        run: test -n "$NODE_AUTH_TOKEN"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_BOOTSTRAP_TOKEN }}
+
       - name: Create a version pull request, or publish
         uses: changesets/action@v2
         with:
           version-script: pnpm run version-packages
-          publish-script: pnpm run release
+          # Pushes only prepare the version PR. Publication is an explicit dispatch.
+          publish-script: ${{ github.event_name == 'workflow_dispatch' && inputs.publish && 'pnpm run release' || '' }}
           commit-message: "chore: version packages"
           pr-title: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ github.event_name == 'workflow_dispatch' && inputs.publish && inputs.bootstrap && secrets.NPM_BOOTSTRAP_TOKEN || '' }}

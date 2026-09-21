@@ -19,7 +19,8 @@
     "check:versions": "node scripts/check-versions.mjs",
     "version-packages": "changeset version && node scripts/sync-plugin-version.mjs && oxfmt --write .claude-plugin .mcp.json && pnpm install --lockfile-only",
     "release": "pnpm run build && pnpm run check:packages && changeset publish",
-    "check:packages": "node scripts/check-packages.mjs"
+    "check:packages": "node scripts/check-packages.mjs",
+    "homebrew:formula": "node scripts/generate-homebrew-formula.mjs"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^1.0.1",
