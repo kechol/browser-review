@@ -102,9 +102,15 @@ button.ghost:hover { background: #f3f4f6; }
 .panel .item[data-status="resolved"] .swatch { background: #22c55e; }
 .panel .item[data-status="dismissed"] .swatch { background: #9ca3af; }
 .panel .empty { padding: 16px; text-align: center; color: #6b7280; }
-.panel .body { min-width: 0; }
-.panel .body .text { color: #111827; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.panel .body { min-width: 0; flex: 1; }
+.panel .body .text { color: #111827; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.5; }
 .panel .body .where { color: #6b7280; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.panel h4 { margin: 8px; font-size: 14px; }
+.status-details { margin: 8px; font-size: 13px; line-height: 1.5; }
+.status-details dt { font-weight: 600; margin-top: 10px; }
+.status-details dd { margin: 2px 0 0; overflow-wrap: anywhere; user-select: text; }
+.panel { color: #111827; }
 
 @media (prefers-color-scheme: dark) {
   .card, .composer, .panel { background: #1f2329; color: #e5e7eb; border-color: #374151; }

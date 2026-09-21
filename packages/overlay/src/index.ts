@@ -60,6 +60,9 @@ function start(cfg: OverlayConfig): void {
 
   const toolbar = el("div", "toolbar");
   const dot = el("span", "dot");
+  dot.title = "Connecting to the review server…";
+  dot.setAttribute("role", "img");
+  dot.setAttribute("aria-label", dot.title);
   const toggle = el("button") as HTMLButtonElement;
   toggle.textContent = "Comment";
   // Stable hooks for the end-to-end tests; the visible labels are free to change.
@@ -68,7 +71,19 @@ function start(cfg: OverlayConfig): void {
   listButton.textContent = "Comments";
   listButton.dataset["action"] = "list";
   const count = el("span", "count");
-  toolbar.append(dot, toggle, listButton, count);
+  const statusButton = el("button") as HTMLButtonElement;
+  statusButton.textContent = "Status";
+  statusButton.dataset["action"] = "status";
+  for (const [button, key] of [
+    [toggle, "c"],
+    [listButton, "l"],
+    [statusButton, "s"],
+  ] as const) {
+    button.type = "button";
+    button.title = `${button.textContent} (${key})`;
+    button.setAttribute("aria-keyshortcuts", key);
+  }
+  toolbar.append(dot, toggle, listButton, count, statusButton);
 
   const highlight = el("div", "highlight");
   const label = el("div", "label");
@@ -94,6 +109,7 @@ function start(cfg: OverlayConfig): void {
   let composer: HTMLElement | null = null;
   let marqueeStart: { x: number; y: number } | null = null;
   let panel: HTMLElement | null = null;
+  let panelKind: "list" | "status" = "list";
   let socket: WebSocket | null = null;
   let reconnectDelay = 500;
 
@@ -105,10 +121,16 @@ function start(cfg: OverlayConfig): void {
     socket.addEventListener("open", () => {
       reconnectDelay = 500;
       dot.dataset["state"] = "open";
+      dot.title = "Connected to the review server";
+      dot.setAttribute("aria-label", dot.title);
+      if (panelKind === "status") renderPanel();
       send({ type: "hello", pageUrl: location.href });
     });
     socket.addEventListener("close", () => {
       dot.dataset["state"] = "closed";
+      dot.title = "Disconnected from the review server — reconnecting…";
+      dot.setAttribute("aria-label", dot.title);
+      if (panelKind === "status") renderPanel();
       setTimeout(connect, reconnectDelay);
       reconnectDelay = Math.min(reconnectDelay * 2, 10_000);
     });
@@ -378,6 +400,35 @@ function start(cfg: OverlayConfig): void {
   function renderPanel(): void {
     if (!panel) return;
     panel.replaceChildren();
+    if (panelKind === "status") {
+      const heading = el("h4");
+      heading.textContent = "Review status";
+      const details = el("dl", "status-details");
+      const entries = [
+        [
+          "Connection",
+          dot.dataset["state"] === "open"
+            ? "Connected"
+            : dot.dataset["state"] === "closed"
+              ? "Disconnected — reconnecting…"
+              : "Connecting…",
+        ],
+        ["Mode", cfg.mode],
+        ["Version", cfg.version],
+        ["MCP URL", `${location.origin}${cfg.control}/mcp`],
+        ["Review URL", location.href],
+        ["Comments", String(annotations.size)],
+      ];
+      for (const [name, value] of entries) {
+        const term = el("dt");
+        term.textContent = name!;
+        const description = el("dd");
+        description.textContent = value!;
+        details.append(term, description);
+      }
+      panel.append(heading, details);
+      return;
+    }
     const rows = [...annotations.values()].toReversed();
     if (rows.length === 0) {
       const empty = el("div", "empty");
@@ -390,6 +441,14 @@ function start(cfg: OverlayConfig): void {
       (item as HTMLButtonElement).type = "button";
       item.dataset["status"] = annotation.status;
       const swatch = el("span", "swatch");
+      swatch.title = {
+        pending: "Pending — waiting for the agent",
+        acknowledged: "Acknowledged — received by the agent",
+        resolved: "Resolved — changes completed",
+        dismissed: "Dismissed — no changes planned",
+      }[annotation.status];
+      swatch.setAttribute("role", "img");
+      swatch.setAttribute("aria-label", swatch.title);
       const body = el("div", "body");
       const textLine = el("div", "text");
       textLine.textContent = annotation.comment;
@@ -399,21 +458,41 @@ function start(cfg: OverlayConfig): void {
         top?.kind === "loc" ? `${top.file}:${top.line}` : annotation.page.path || location.pathname;
       body.append(textLine, where);
       item.append(swatch, body);
-      item.addEventListener("click", () => showCard(annotation));
+      item.addEventListener("click", () => {
+        if (annotation.page.path === location.pathname) {
+          annotationElement(annotation)?.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+            inline: "nearest",
+          });
+        }
+        showCard(annotation);
+      });
       panel.append(item);
     }
   }
 
-  function togglePanel(): void {
-    if (panel) {
-      panel.remove();
-      panel = null;
-      listButton.dataset["on"] = "false";
-      return;
-    }
+  function closePanel(): void {
+    panel?.remove();
+    panel = null;
+    listButton.dataset["on"] = "false";
+    statusButton.dataset["on"] = "false";
+    listButton.setAttribute("aria-expanded", "false");
+    statusButton.setAttribute("aria-expanded", "false");
+  }
+
+  function togglePanel(kind: "list" | "status"): void {
+    const wasOpen = !!panel && panelKind === kind;
+    closePanel();
+    if (wasOpen) return;
+    panelKind = kind;
     panel = el("div", "panel");
+    panel.setAttribute("role", "region");
+    panel.setAttribute("aria-label", kind === "list" ? "Comments" : "Review status");
     root.append(panel);
-    listButton.dataset["on"] = "true";
+    const button = kind === "list" ? listButton : statusButton;
+    button.dataset["on"] = "true";
+    button.setAttribute("aria-expanded", "true");
     renderPanel();
   }
 
@@ -430,7 +509,8 @@ function start(cfg: OverlayConfig): void {
   }
 
   toggle.addEventListener("click", () => setAnnotating(!annotating));
-  listButton.addEventListener("click", togglePanel);
+  listButton.addEventListener("click", () => togglePanel("list"));
+  statusButton.addEventListener("click", () => togglePanel("status"));
 
   document.addEventListener(
     "mousemove",
@@ -494,10 +574,39 @@ function start(cfg: OverlayConfig): void {
   );
 
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && (annotating || composer)) {
+    if (event.key === "Escape") {
       closeComposer();
       setAnnotating(false);
+      closePanel();
+      return;
     }
+    if (
+      event.defaultPrevented ||
+      event.repeat ||
+      event.isComposing ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      event.shiftKey
+    )
+      return;
+    // composedPath includes the actual input inside both our and the page's shadow roots.
+    if (
+      document.designMode === "on" ||
+      event
+        .composedPath()
+        .some(
+          (node) =>
+            node instanceof HTMLElement &&
+            (node.matches("input, textarea, select, [role=textbox]") || node.isContentEditable),
+        )
+    )
+      return;
+    if (event.key === "c" && !composer) setAnnotating(!annotating);
+    else if (event.key === "l") togglePanel("list");
+    else if (event.key === "s") togglePanel("status");
+    else return;
+    event.preventDefault();
   });
 
   let frame = 0;
@@ -506,6 +615,9 @@ function start(cfg: OverlayConfig): void {
     frame = requestAnimationFrame(() => {
       frame = 0;
       renderPins();
+      const current = openCard ? annotations.get(openCard.dataset["for"] ?? "") : null;
+      const rect = current ? locate(current) : null;
+      if (openCard && rect) place(openCard, { x: rect.left + 28, y: rect.top });
       if (annotating && hovered?.isConnected) showHighlight(hovered);
     });
   };
@@ -542,15 +654,21 @@ function moveTo(node: HTMLElement, rect: DOMRect): void {
   node.style.display = "";
 }
 
+function annotationElement(annotation: Annotation): Element | null {
+  const hint = annotation.sourceHints.find((h) => h.kind === "selector");
+  if (!hint) return null;
+  try {
+    return document.querySelector(hint.value);
+  } catch {
+    return null;
+  }
+}
+
 function locate(annotation: Annotation): DOMRect | null {
   const selectorHint = annotation.sourceHints.find((h) => h.kind === "selector");
   if (selectorHint && selectorHint.kind === "selector") {
-    try {
-      const found = document.querySelector(selectorHint.value);
-      if (found) return found.getBoundingClientRect();
-    } catch {
-      // A selector that no longer parses is no worse than one that no longer matches.
-    }
+    const found = annotationElement(annotation);
+    if (found) return found.getBoundingClientRect();
     const { bbox } = selectorHint;
     return new DOMRect(bbox.x - window.scrollX, bbox.y - window.scrollY, bbox.width, bbox.height);
   }
