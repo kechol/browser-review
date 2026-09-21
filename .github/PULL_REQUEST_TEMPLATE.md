@@ -8,9 +8,9 @@
 
 ## Checklist
 
-- [ ] `npm run build && npm test` passes
-- [ ] `npm run format:check && npm run lint && npm run typecheck` passes
-- [ ] A changeset is included (`npx changeset`), or this change is invisible to users
+- [ ] `pnpm run build && pnpm test` passes
+- [ ] `pnpm run format:check && pnpm run lint && pnpm run typecheck` passes
+- [ ] A changeset is included (`pnpm exec changeset`), or this change is invisible to users
 - [ ] Commits are signed off (`git commit -s`) — see CONTRIBUTING.md
 - [ ] No company names, internal hostnames, personal email addresses, or real
       product content added anywhere, including test fixtures

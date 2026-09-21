@@ -150,7 +150,10 @@ function fiberOf(el: Element): Fiber | null {
 
 function componentName(fiber: Fiber): string | null {
   const type = (fiber.type ?? fiber.elementType) as
-    { displayName?: string; name?: string } | string | null | undefined;
+    | { displayName?: string; name?: string }
+    | string
+    | null
+    | undefined;
   if (!type) return null;
   if (typeof type === "string") return null; // a host element, not a component
   return type.displayName ?? type.name ?? null;

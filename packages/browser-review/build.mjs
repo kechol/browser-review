@@ -14,7 +14,7 @@ await build({
   bundle: true,
   format: "esm",
   platform: "node",
-  target: ["node22"],
+  target: ["node24"],
   sourcemap: true,
   // Runtime dependencies stay external so they resolve from node_modules and
   // keep their own licences and update path. Only @browser-review/shared, which

@@ -36,55 +36,51 @@ function terms(expression) {
     .filter(Boolean);
 }
 
-/**
- * `not-installed` is a real answer, not a failure: `ws` lists optional native
- * speed-ups and the MCP SDK lists an optional validator peer. A dependency
- * nobody installs ships to nobody.
- */
-function licenseOf(name) {
-  let manifest;
-  try {
-    manifest = JSON.parse(
-      readFileSync(path.join(ROOT, "node_modules", name, "package.json"), "utf8"),
-    );
-  } catch {
-    return "not-installed";
-  }
+// Read each installed instance: pnpm can keep multiple versions of a package
+// at different paths, without exposing any of them at the workspace root.
+function licenseOf(packagePath) {
+  const manifest = JSON.parse(readFileSync(path.join(packagePath, "package.json"), "utf8"));
   const license = manifest.license ?? manifest.licenses?.[0];
   if (!license) return null;
   return typeof license === "string" ? license : (license.type ?? null);
 }
 
 function treeFor(pkg) {
-  const json = execFileSync("npm", ["ls", "--omit=dev", "--all", "--json", "--workspace", pkg], {
-    cwd: ROOT,
-    encoding: "utf8",
-    maxBuffer: 32 * 1024 * 1024,
-  });
-  return JSON.parse(json);
+  const json = execFileSync(
+    "pnpm",
+    ["--filter", pkg, "list", "--prod", "--depth", "Infinity", "--json"],
+    {
+      cwd: ROOT,
+      encoding: "utf8",
+      maxBuffer: 32 * 1024 * 1024,
+    },
+  );
+  return JSON.parse(json).find((node) => node.name === pkg);
 }
 
 const seen = new Map();
 const visited = new Set();
 
 function collect(node) {
-  for (const [name, child] of Object.entries(node?.dependencies ?? {})) {
-    if (visited.has(name)) continue;
-    visited.add(name);
+  for (const [name, child] of Object.entries({
+    ...node.dependencies,
+    ...node.optionalDependencies,
+  })) {
+    // Deduplicated entries may omit their children. Visit the full entry later.
+    if (child.deduped) continue;
+    if (!child.path) throw new Error(`missing installed path for ${name}`);
+    if (visited.has(child.path)) continue;
+    visited.add(child.path);
     // Our own workspace packages carry the project licence; walk through them
     // to their dependencies without recording them as third party.
     const ours = name === "browser-review" || name.startsWith("@browser-review/");
-    if (!ours) seen.set(name, licenseOf(name));
+    if (!ours) seen.set(`${name}@${child.version}`, licenseOf(child.path));
     collect(child);
   }
 }
 
 for (const pkg of PUBLISHED) {
-  // `npm ls --workspace` still reports the monorepo root as the top node, with
-  // every hoisted package beside ours. Start from the workspace's own entry so
-  // that dev tooling and anything left over from a previous install stay out.
-  const tree = treeFor(pkg);
-  const own = tree.dependencies?.[pkg];
+  const own = treeFor(pkg);
   if (!own) {
     console.error(`could not find ${pkg} in the dependency tree; is it installed?`);
     process.exit(1);
@@ -94,7 +90,6 @@ for (const pkg of PUBLISHED) {
 
 const problems = [];
 for (const [name, license] of [...seen].sort()) {
-  if (license === "not-installed") continue;
   if (!license) {
     problems.push(`${name}: no license field found`);
     continue;

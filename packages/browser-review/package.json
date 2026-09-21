@@ -33,7 +33,7 @@
     "README.md"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "os": [
     "darwin",
@@ -50,6 +50,11 @@
     "zod": "^4.6.5"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
+  },
+  "devDependencies": {
+    "@browser-review/shared": "workspace:*",
+    "playwright": "^1.63.0"
   }
 }

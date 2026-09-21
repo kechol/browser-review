@@ -98,4 +98,4 @@ the overlay noticing.
 The plugin repository stays thin: it holds manifests, skills, a hook, and no
 built JavaScript. `.mcp.json` starts the published package through `npx`, which
 is why the plugin's version and the package's version have to move together —
-`npm run check:versions` fails the build when they drift.
+`pnpm run check:versions` fails the build when they drift.

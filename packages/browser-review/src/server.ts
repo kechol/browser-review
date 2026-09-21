@@ -88,7 +88,7 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
 
   const overlaySource = await fs.readFile(overlayBundlePath(), "utf8").catch(() => {
     throw new Error(
-      `overlay bundle missing at ${overlayBundlePath()}. Run \`npm run build\` in the repository.`,
+      `overlay bundle missing at ${overlayBundlePath()}. Run \`pnpm run build\` in the repository.`,
     );
   });
 

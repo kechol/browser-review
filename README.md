@@ -54,7 +54,7 @@ without asking.
 
 ```sh
 git clone https://github.com/kechol/browser-review.git
-cd browser-review && npm install && npm run build
+cd browser-review && pnpm install && pnpm run build
 ```
 
 Then add the clone as a local marketplace. Local marketplaces are loaded in
@@ -127,7 +127,7 @@ See [`examples/vite-react`](examples/vite-react).
 
 ## Requirements
 
-- Node.js 22 or newer
+- Node.js 24 or newer
 - macOS or Linux. **Windows is not supported**: the server, the state directory
   layout, and the browser-opening helper are all written for POSIX. A patch is
   welcome; the path handling is the bulk of it.

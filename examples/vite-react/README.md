@@ -3,9 +3,12 @@
 A fictional dashboard, used to show browser-review pointing at a running dev
 server rather than a static file.
 
+From the repository root (Node.js 24+ and pnpm 12.5.1):
+
 ```sh
-npm install
-npm run dev          # http://127.0.0.1:5173
+pnpm install
+pnpm run build
+pnpm --filter browser-review-example-vite-react dev # http://127.0.0.1:5173
 ```
 
 Then, from the repository root:

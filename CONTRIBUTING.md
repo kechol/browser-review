@@ -5,8 +5,8 @@ setup, the checks that must pass, and how changes get released.
 
 ## Requirements
 
-- Node.js 22 or newer
-- npm 10 or newer
+- Node.js 24 or newer
+- pnpm 12.5.1 (pinned in `packageManager`)
 - macOS or Linux (Windows is not supported — see the README)
 
 ## Getting set up
@@ -14,11 +14,11 @@ setup, the checks that must pass, and how changes get released.
 ```sh
 git clone https://github.com/kechol/browser-review.git
 cd browser-review
-npm install
-npm run build
+pnpm install
+pnpm run build
 ```
 
-`npm run build` compiles the shared types, bundles the browser overlay into
+`pnpm run build` compiles the shared types, bundles the browser overlay into
 `packages/browser-review/dist/overlay.js`, and bundles the CLI into
 `packages/browser-review/dist/cli.js`.
 
@@ -44,14 +44,14 @@ reinstalling:
 Every one of these runs in CI and must pass:
 
 ```sh
-npm run format:check   # prettier
-npm run lint           # oxlint
-npm run typecheck      # tsc --build
-npm test               # vitest
-npm run license-check  # dependency licenses must be MIT / Apache-2.0 / BSD / ISC
-npm run check:no-egress # no outbound network targets other than loopback/upstream
-npm run check:versions  # plugin.json version matches the published package
-npm run test:e2e       # playwright (needs `npx playwright install chromium` once)
+pnpm run format:check   # oxfmt
+pnpm run lint           # oxlint
+pnpm run typecheck      # tsc --build
+pnpm test               # vitest
+pnpm run license-check  # dependency licenses must be MIT / Apache-2.0 / BSD / ISC
+pnpm run check:no-egress # no outbound network targets other than loopback/upstream
+pnpm run check:versions  # plugin.json version matches the published package
+pnpm run test:e2e       # playwright (needs `pnpm exec playwright install chromium` once)
 ```
 
 ## Developer Certificate of Origin
@@ -77,7 +77,7 @@ for example `feat(overlay): ...`.
 Every user-visible change needs a changeset:
 
 ```sh
-npx changeset
+pnpm exec changeset
 ```
 
 Pick the affected packages and the bump level, and describe the change in one or
@@ -87,7 +87,7 @@ Releases are cut by maintainers: merging the "Version Packages" pull request
 tags the release and publishes to npm from GitHub Actions using npm Trusted
 Publishing with `--provenance`. **Nobody publishes from a laptop.** When the
 version of `packages/browser-review` changes, `.claude-plugin/plugin.json` must
-be bumped in the same pull request; `npm run check:versions` enforces this.
+be bumped in the same pull request; `pnpm run check:versions` enforces this.
 
 ## What to keep out of the repository
 
@@ -104,7 +104,7 @@ This is a public repository. Please do not add:
 Pull requests that break one of these will be asked to change:
 
 - The server binds to `127.0.0.1` only. Do not add a host or interface option.
-- The project makes no outbound network requests. `npm run check:no-egress`
+- The project makes no outbound network requests. `pnpm run check:no-egress`
   fails the build if a request target other than loopback or the configured
   upstream appears in the source.
 - Nothing is written inside the user's repository. Session state lives under
