@@ -121,7 +121,7 @@ export function createAnnotation(
   const sourceHints = hints
     .map(sanitizeHint)
     .filter((h): h is SourceHint => h !== null)
-    .sort((a, b) => b.confidence - a.confidence)
+    .toSorted((a, b) => b.confidence - a.confidence)
     .slice(0, MAX_HINTS);
 
   return {

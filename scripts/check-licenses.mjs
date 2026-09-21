@@ -89,7 +89,7 @@ for (const pkg of PUBLISHED) {
 }
 
 const problems = [];
-for (const [name, license] of [...seen].sort()) {
+for (const [name, license] of [...seen].toSorted()) {
   if (!license) {
     problems.push(`${name}: no license field found`);
     continue;

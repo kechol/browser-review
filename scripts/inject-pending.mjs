@@ -41,7 +41,7 @@ function newestActiveSession() {
     return null;
   }
   // Session ids are ULIDs, so the highest filename is the newest session.
-  entries.sort().reverse();
+  entries = entries.toSorted().toReversed();
   for (const entry of entries) {
     const file = path.join(stateDir(), entry);
     try {

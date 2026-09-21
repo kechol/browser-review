@@ -50,7 +50,7 @@ async function acquireLock(file: string): Promise<() => Promise<void>> {
         continue;
       }
       if (Date.now() > deadline) {
-        throw new Error(`timed out waiting for the session lock at ${lock}`);
+        throw new Error(`timed out waiting for the session lock at ${lock}`, { cause: err });
       }
       await delay(LOCK_RETRY_MS);
     }

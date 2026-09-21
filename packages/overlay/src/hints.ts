@@ -365,5 +365,5 @@ export function collectSourceHints(el: Element): SourceHint[] {
   }
   const selector = safe(() => fromSelector(el));
   if (selector) hints.push(selector);
-  return hints.sort((a, b) => b.confidence - a.confidence);
+  return hints.toSorted((a, b) => b.confidence - a.confidence);
 }

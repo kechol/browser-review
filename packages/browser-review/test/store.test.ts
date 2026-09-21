@@ -175,7 +175,7 @@ describe("sweepStaleSessions", () => {
     await writeSessionFile(session("01KKK"));
 
     expect(await sweepStaleSessions()).toEqual(["01III"]);
-    const left = (await listSessionFiles()).map((f) => f.session.id).sort();
+    const left = (await listSessionFiles()).map((f) => f.session.id).toSorted();
     expect(left).toEqual(["01JJJ", "01KKK"]);
   });
 });

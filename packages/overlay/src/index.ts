@@ -35,6 +35,17 @@ if (config && !document.getElementById(HOST_ID)) {
   start(config);
 }
 
+function outerHtmlHead(target: Element): string {
+  const clone = target.cloneNode(false) as Element;
+  clone.removeAttribute("value");
+  for (const attr of Array.from(clone.attributes)) {
+    if (attr.name === "value") clone.removeAttribute(attr.name);
+  }
+  const open = clone.outerHTML.replace(/<\/[a-z0-9-]+>$/i, "");
+  const inner = reviewText(target);
+  return `${open}${inner}`.slice(0, OUTER_HTML_HEAD_LIMIT);
+}
+
 function start(cfg: OverlayConfig): void {
   /* ----------------------------------------------------------------- DOM --- */
 
@@ -179,17 +190,6 @@ function start(cfg: OverlayConfig): void {
   }
 
   /* ------------------------------------------------------------- composer --- */
-
-  function outerHtmlHead(target: Element): string {
-    const clone = target.cloneNode(false) as Element;
-    clone.removeAttribute("value");
-    for (const attr of Array.from(clone.attributes)) {
-      if (attr.name === "value") clone.removeAttribute(attr.name);
-    }
-    const open = clone.outerHTML.replace(/<\/[a-z0-9-]+>$/i, "");
-    const inner = reviewText(target);
-    return `${open}${inner}`.slice(0, OUTER_HTML_HEAD_LIMIT);
-  }
 
   function openComposer(target: Element, at: { x: number; y: number }): void {
     closeComposer();
@@ -378,7 +378,7 @@ function start(cfg: OverlayConfig): void {
   function renderPanel(): void {
     if (!panel) return;
     panel.replaceChildren();
-    const rows = [...annotations.values()].reverse();
+    const rows = [...annotations.values()].toReversed();
     if (rows.length === 0) {
       const empty = el("div", "empty");
       empty.textContent = "No comments yet. Hit Comment, then click something on the page.";

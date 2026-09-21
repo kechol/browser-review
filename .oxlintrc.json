@@ -1,5 +1,27 @@
 {
   "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxlint/configuration_schema.json",
-  "categories": { "correctness": "error", "suspicious": "warn" },
-  "ignorePatterns": ["**/dist/**", "**/node_modules/**"]
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "ignorePatterns": ["**/dist/**", "**/node_modules/**"],
+  "overrides": [
+    {
+      "files": ["packages/overlay/src/hints.ts"],
+      "rules": {
+        "eslint/no-underscore-dangle": [
+          "warn",
+          {
+            "allow": [
+              "_debugSource",
+              "_debugOwner",
+              "__svelte_meta",
+              "__vueParentComponent",
+              "__name"
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }
