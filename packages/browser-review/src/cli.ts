@@ -5,7 +5,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import type { OpenResult, SessionMode } from "@browser-review/shared";
 import { feedUrl, formatStatus, mcpUrl, reviewUrl } from "./format.js";
@@ -389,7 +389,7 @@ function isEntryPoint(): boolean {
   const entry = process.argv[1];
   if (!entry) return false;
   try {
-    return import.meta.url === pathToFileURL(entry).href;
+    return fs.realpathSync(SELF) === fs.realpathSync(entry);
   } catch {
     return false;
   }

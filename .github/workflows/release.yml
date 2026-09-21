@@ -107,6 +107,7 @@ jobs:
     name: Update Homebrew tap
     needs: publish
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: release
     steps:
       - uses: actions/checkout@v7
@@ -122,10 +123,11 @@ jobs:
         run: |
           mkdir -p .output/homebrew
           curl --fail --location --proto '=https' --proto-redir '=https' \
-            --retry 5 --retry-all-errors --retry-delay 10 \
+            --connect-timeout 10 --max-time 30 \
+            --retry 60 --retry-all-errors --retry-delay 15 --retry-max-time 900 \
             "https://registry.npmjs.org/browser-review/-/browser-review-${VERSION}.tgz" \
             --output .output/homebrew/browser-review.tgz
-          pnpm homebrew:formula .output/homebrew/browser-review.tgz
+          node scripts/generate-homebrew-formula.mjs .output/homebrew/browser-review.tgz
           ruby -c .output/homebrew/browser-review.rb
       - uses: actions/upload-artifact@v7
         with:
