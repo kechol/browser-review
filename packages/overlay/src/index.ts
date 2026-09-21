@@ -59,6 +59,7 @@ function start(cfg: OverlayConfig): void {
   root.append(style);
 
   const toolbar = el("div", "toolbar");
+  toolbar.title = "Hide/show review UI: ⌘ + \\";
   const dot = el("span", "dot");
   dot.title = "Connecting to the review server…";
   dot.setAttribute("role", "img");
@@ -104,6 +105,8 @@ function start(cfg: OverlayConfig): void {
   const annotations = new Map<string, Annotation>();
   const pins = new Map<string, HTMLElement>();
   let annotating = false;
+  let uiHidden = false;
+  let focusBeforeHide: HTMLElement | null = null;
   let hovered: Element | null = null;
   let openCard: HTMLElement | null = null;
   let composer: HTMLElement | null = null;
@@ -565,7 +568,7 @@ function start(cfg: OverlayConfig): void {
     "pointermove",
     (event) => {
       if (!event.isPrimary) return;
-      if (!annotating || composer) return;
+      if (uiHidden || !annotating || composer) return;
       if (marqueeStart) {
         const rect = rectBetween(marqueeStart, { x: event.clientX, y: event.clientY });
         moveTo(marquee, rect);
@@ -585,6 +588,7 @@ function start(cfg: OverlayConfig): void {
     "pointerdown",
     (event) => {
       if (
+        uiHidden ||
         !event.isPrimary ||
         event.pointerType === "mouse" ||
         !annotating ||
@@ -605,7 +609,7 @@ function start(cfg: OverlayConfig): void {
   document.addEventListener(
     "pointercancel",
     () => {
-      if (!annotating || composer) return;
+      if (uiHidden || !annotating || composer) return;
       hovered = null;
       marqueeStart = null;
       hide(highlight, label, marquee);
@@ -616,7 +620,7 @@ function start(cfg: OverlayConfig): void {
   document.addEventListener(
     "mousedown",
     (event) => {
-      if (!annotating || composer || isOurs(event.target)) return;
+      if (uiHidden || !annotating || composer || isOurs(event.target)) return;
       if (event.shiftKey) {
         marqueeStart = { x: event.clientX, y: event.clientY };
         event.preventDefault();
@@ -629,7 +633,7 @@ function start(cfg: OverlayConfig): void {
   document.addEventListener(
     "mouseup",
     (event) => {
-      if (!marqueeStart) return;
+      if (uiHidden || !marqueeStart) return;
       const rect = rectBetween(marqueeStart, { x: event.clientX, y: event.clientY });
       marqueeStart = null;
       hide(marquee);
@@ -644,7 +648,7 @@ function start(cfg: OverlayConfig): void {
   document.addEventListener(
     "click",
     (event) => {
-      if (!annotating || composer || isOurs(event.target)) return;
+      if (uiHidden || !annotating || composer || isOurs(event.target)) return;
       const target = elementAt(event.clientX, event.clientY);
       if (!target) return;
       // Stop the page from acting on a click meant for us.
@@ -656,6 +660,34 @@ function start(cfg: OverlayConfig): void {
   );
 
   document.addEventListener("keydown", (event) => {
+    if (
+      !event.defaultPrevented &&
+      !event.repeat &&
+      !event.isComposing &&
+      event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.shiftKey &&
+      (event.key === "\\" || event.code === "Backslash")
+    ) {
+      event.preventDefault();
+      uiHidden = !uiHidden;
+      if (uiHidden) {
+        focusBeforeHide = root.activeElement instanceof HTMLElement ? root.activeElement : null;
+        focusBeforeHide?.blur();
+        marqueeStart = null;
+        hovered = null;
+        hide(highlight, label, marquee);
+        host.style.display = "none";
+      } else {
+        host.style.display = "";
+        reposition();
+        if (focusBeforeHide?.isConnected) focusBeforeHide.focus({ preventScroll: true });
+        focusBeforeHide = null;
+      }
+      return;
+    }
+    if (uiHidden) return;
     if (event.key === "Escape") {
       closeComposer();
       setAnnotating(false);

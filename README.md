@@ -25,8 +25,9 @@ exactly as it was, with a small toolbar in the corner. Hit **Comment**, click
 anything, type what should change.
 
 Keyboard shortcuts: **c** toggles element selection, **l** toggles the comment
-list, and **s** toggles status (connection, mode, version, and MCP URL).
-Shortcuts are inactive while typing in an input or editor. **Escape** closes
+list, and **s** toggles status (connection, mode, version, and MCP URL). `Cmd + \` hides or shows the entire review UI, preserving open panels and
+comment drafts. While hidden, review shortcuts and element picking are paused.
+The c/l/s shortcuts are inactive while typing in an input or editor. **Escape** closes
 the panel or cancels element selection. The comment list preserves line breaks
 and displays full comments, with scrolling for longer text. In Status, use
 **Copy instructions for Claude Code** to copy the MCP URL together with a

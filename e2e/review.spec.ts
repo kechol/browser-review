@@ -431,3 +431,54 @@ test.describe("mobile touch element selection", () => {
     await expect(overlay.locator('[data-action="annotate"]')).toHaveAttribute("data-on", "true");
   });
 });
+
+test("Cmd+Backslash hides all review UI and preserves the composer draft", async ({ page }) => {
+  await page.goto(session.reviewUrl);
+  const overlay = page.locator("#browser-review-overlay");
+  await expect(overlay.locator(".dot")).toHaveAttribute("data-state", "open");
+  await annotate(page, "h1.hero-title", "Pin for visibility toggle");
+  await page.keyboard.press("l");
+  await overlay.locator('[data-action="annotate"]').click();
+  await page.locator("h1.hero-title").click({ force: true });
+  const area = overlay.locator(".composer textarea");
+  await area.fill("Preserve this unsent draft");
+  await page.keyboard.press("Meta+Backslash");
+  for (const selector of [".toolbar", ".panel", ".pin", ".composer", ".highlight"]) {
+    await expect(overlay.locator(selector).first()).toBeHidden();
+  }
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("l");
+  await page.keyboard.press("s");
+  await page.keyboard.press("Meta+Backslash");
+  await expect(overlay.locator(".toolbar")).toBeVisible();
+  await expect(overlay.locator(".panel")).toBeVisible();
+  await expect(overlay.locator(".pin").first()).toBeVisible();
+  await expect(overlay.locator(".highlight")).toBeVisible();
+  await expect(area).toHaveValue("Preserve this unsent draft");
+  await expect(area).toBeFocused();
+});
+
+test("hidden selection mode does not intercept page clicks and resumes on show", async ({
+  page,
+}) => {
+  await page.goto(session.reviewUrl);
+  const overlay = page.locator("#browser-review-overlay");
+  await expect(overlay.locator(".toolbar")).toBeVisible();
+  await page.evaluate(() => {
+    document.querySelector("button.cta")!.addEventListener("click", () => {
+      document.body.dataset.pageClicked = "true";
+    });
+  });
+  await page.keyboard.press("c");
+  await page.keyboard.press("Meta+Backslash");
+  await page.keyboard.press("c");
+  await page.locator("button.cta").click();
+  await expect(page.locator("body")).toHaveAttribute("data-page-clicked", "true");
+  await expect(overlay.locator(".composer")).toHaveCount(0);
+  await page.keyboard.press("Meta+Backslash");
+  await expect(overlay.locator('[data-action="annotate"]')).toHaveAttribute("data-on", "true");
+  await page.locator("h1.hero-title").hover();
+  await expect(overlay.locator(".highlight")).toBeVisible();
+  await page.locator("h1.hero-title").click();
+  await expect(overlay.locator(".composer")).toBeVisible();
+});
