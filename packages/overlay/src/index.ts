@@ -60,10 +60,13 @@ function start(cfg: OverlayConfig): void {
 
   const toolbar = el("div", "toolbar");
   toolbar.title = "Hide/show review UI: ⌘ + \\";
-  const dot = el("span", "dot");
-  dot.title = "Connecting to the review server…";
-  dot.setAttribute("role", "img");
-  dot.setAttribute("aria-label", dot.title);
+  const dot = el("button", "dot") as HTMLButtonElement;
+  dot.type = "button";
+  dot.dataset["action"] = "status";
+  dot.title = "Review status (s) — Connecting to the review server…";
+  dot.setAttribute("aria-label", "Review status — Connecting to the review server…");
+  dot.setAttribute("aria-keyshortcuts", "s");
+  dot.setAttribute("aria-expanded", "false");
   const toggle = el("button") as HTMLButtonElement;
   toggle.textContent = "Comment";
   // Stable hooks for the end-to-end tests; the visible labels are free to change.
@@ -72,19 +75,15 @@ function start(cfg: OverlayConfig): void {
   listButton.textContent = "Comments";
   listButton.dataset["action"] = "list";
   const count = el("span", "count");
-  const statusButton = el("button") as HTMLButtonElement;
-  statusButton.textContent = "Status";
-  statusButton.dataset["action"] = "status";
   for (const [button, key] of [
     [toggle, "c"],
     [listButton, "l"],
-    [statusButton, "s"],
   ] as const) {
     button.type = "button";
     button.title = `${button.textContent} (${key})`;
     button.setAttribute("aria-keyshortcuts", key);
   }
-  toolbar.append(dot, toggle, listButton, count, statusButton);
+  toolbar.append(dot, toggle, listButton, count);
 
   const highlight = el("div", "highlight");
   const label = el("div", "label");
@@ -104,6 +103,8 @@ function start(cfg: OverlayConfig): void {
 
   const annotations = new Map<string, Annotation>();
   const pins = new Map<string, HTMLElement>();
+  const locations = new Map<string, LocatedAnnotation>();
+  const replyDrafts = new Map<string, ReplyDraft>();
   let annotating = false;
   let uiHidden = false;
   let focusBeforeHide: HTMLElement | null = null;
@@ -125,15 +126,18 @@ function start(cfg: OverlayConfig): void {
     socket.addEventListener("open", () => {
       reconnectDelay = 500;
       dot.dataset["state"] = "open";
-      dot.title = "Connected to the review server";
-      dot.setAttribute("aria-label", dot.title);
+      dot.title = "Review status (s) — Connected to the review server";
+      dot.setAttribute("aria-label", "Review status — Connected to the review server");
       if (panelKind === "status") renderPanel();
       send({ type: "hello", pageUrl: location.href });
     });
     socket.addEventListener("close", () => {
       dot.dataset["state"] = "closed";
-      dot.title = "Disconnected from the review server — reconnecting…";
-      dot.setAttribute("aria-label", dot.title);
+      dot.title = "Review status (s) — Disconnected from the review server — reconnecting…";
+      dot.setAttribute(
+        "aria-label",
+        "Review status — Disconnected from the review server — reconnecting…",
+      );
       if (panelKind === "status") renderPanel();
       setTimeout(connect, reconnectDelay);
       reconnectDelay = Math.min(reconnectDelay * 2, 10_000);
@@ -147,13 +151,26 @@ function start(cfg: OverlayConfig): void {
         return;
       }
       if (message.type === "init") {
+        rememberOpenReply();
+        const openId = openAnnotationId();
         annotations.clear();
         for (const annotation of message.annotations) annotations.set(annotation.id, annotation);
-        renderPins();
+        scheduleReposition(true);
+        if (panel) renderPanel();
+        if (openId) {
+          const current = annotations.get(openId);
+          if (current) showCard(current);
+          else {
+            openCard?.remove();
+            openCard = null;
+          }
+        }
       } else if (message.type === "updated") {
+        rememberOpenReply();
         annotations.set(message.annotation.id, message.annotation);
-        renderPins();
-        if (openCard?.dataset["for"] === message.annotation.id) showCard(message.annotation);
+        scheduleReposition(true);
+        if (panel) renderPanel();
+        if (openAnnotationId() === message.annotation.id) showCard(message.annotation);
       } else if (message.type === "reload") {
         location.reload();
       }
@@ -276,14 +293,14 @@ function start(cfg: OverlayConfig): void {
 
   /* ------------------------------------------------------------------ pins --- */
 
-  function renderPins(refreshPanel = true): void {
+  function renderPins(): void {
     const visible = new Set<string>();
     let index = 0;
     for (const annotation of annotations.values()) {
       index += 1;
-      if (annotation.page.path !== location.pathname) continue;
-      const rect = locate(annotation);
-      if (!rect) continue;
+      const located = locations.get(annotation.id);
+      if (located?.kind !== "confirmed") continue;
+      const { rect } = located;
       visible.add(annotation.id);
 
       let pin = pins.get(annotation.id);
@@ -321,18 +338,17 @@ function start(cfg: OverlayConfig): void {
       (a) => a.status === "pending" || a.status === "acknowledged",
     ).length;
     count.textContent = pending > 0 ? String(pending) : "";
-    if (panel && refreshPanel) renderPanel();
   }
 
   /* ------------------------------------------------------------------ card --- */
 
   function showCard(annotation: Annotation): void {
-    const oldArea =
-      openCard?.dataset["for"] === annotation.id ? openCard.querySelector("textarea") : null;
-    const draft = oldArea?.value ?? "";
-    const hadFocus = !!oldArea && root.activeElement === oldArea;
-    openCard?.remove();
-    const rect = locate(annotation);
+    rememberOpenReply();
+    const saved = replyDrafts.get(annotation.id);
+    (openCard ?? root.querySelector<HTMLElement>(".card"))?.remove();
+    const located = resolveAnnotation(annotation);
+    locations.set(annotation.id, located);
+    const rect = located.kind === "confirmed" ? located.rect : null;
     const card = el("div", "card");
     card.dataset["for"] = annotation.id;
 
@@ -350,7 +366,9 @@ function start(cfg: OverlayConfig): void {
           : top?.kind === "selector"
             ? top.value
             : "";
-    card.append(heading, comment, meta);
+    const position = el("div", "position");
+    position.textContent = positionMessage(located);
+    card.append(heading, comment, meta, position);
 
     if (annotation.resolution && annotation.status !== "pending") {
       const box = el("div", annotation.status === "dismissed" ? "answer" : "resolution");
@@ -367,19 +385,38 @@ function start(cfg: OverlayConfig): void {
       card.append(box);
     }
 
-    if (openQuestion(annotation)) {
+    if (openQuestion(annotation) || saved?.value) {
+      if (!openQuestion(annotation)) {
+        const unsent = el("div", "draft-note");
+        unsent.textContent = "Unsent reply — it was not sent before the review changed.";
+        card.append(unsent);
+      }
       const area = document.createElement("textarea");
+      area.dataset["reply"] = annotation.id;
       area.placeholder = "Answer the agent…";
-      area.value = draft;
+      area.value = saved?.value ?? "";
       const row = el("div", "row");
-      const reply = el("button", "primary") as HTMLButtonElement;
-      reply.textContent = "Reply";
-      row.append(reply);
+      const feedback = el("span", "reply-feedback");
+      row.append(feedback);
+      let reply: HTMLButtonElement | null = null;
+      if (openQuestion(annotation)) {
+        reply = el("button", "primary") as HTMLButtonElement;
+        reply.textContent = "Reply";
+        row.append(reply);
+      }
       card.append(area, row);
-      reply.addEventListener("click", () => {
+      area.addEventListener("input", () => rememberReply(annotation.id, area));
+      reply?.addEventListener("click", () => {
         const answer = area.value.trim();
         if (answer === "") return;
-        if (send({ type: "answer", id: annotation.id, text: answer })) area.value = "";
+        if (send({ type: "answer", id: annotation.id, text: answer })) {
+          area.value = "";
+          replyDrafts.delete(annotation.id);
+          feedback.textContent = "";
+        } else {
+          rememberReply(annotation.id, area);
+          feedback.textContent = "Disconnected. Wait for reconnection, then retry.";
+        }
       });
     }
 
@@ -399,7 +436,31 @@ function start(cfg: OverlayConfig): void {
     });
     root.append(card);
     openCard = card;
-    if (hadFocus) card.querySelector("textarea")?.focus();
+    const nextArea = card.querySelector<HTMLTextAreaElement>("textarea[data-reply]");
+    if (saved?.focused && nextArea) {
+      nextArea.focus({ preventScroll: true });
+      nextArea.setSelectionRange(saved.start, saved.end);
+    }
+  }
+
+  function rememberReply(id: string, area: HTMLTextAreaElement): void {
+    replyDrafts.set(id, {
+      value: area.value,
+      start: area.selectionStart,
+      end: area.selectionEnd,
+      focused: root.activeElement === area,
+    });
+  }
+
+  function rememberOpenReply(): void {
+    const card = openCard ?? root.querySelector<HTMLElement>(".card");
+    const id = card?.dataset["for"];
+    const area = card?.querySelector<HTMLTextAreaElement>("textarea[data-reply]");
+    if (id && area) rememberReply(id, area);
+  }
+
+  function openAnnotationId(): string | undefined {
+    return (openCard ?? root.querySelector<HTMLElement>(".card"))?.dataset["for"];
   }
 
   /* ----------------------------------------------------------------- panel --- */
@@ -491,6 +552,7 @@ function start(cfg: OverlayConfig): void {
     for (const annotation of rows) {
       const item = el("button", "item");
       (item as HTMLButtonElement).type = "button";
+      item.dataset["for"] = annotation.id;
       item.dataset["status"] = annotation.status;
       const swatch = el("span", "swatch");
       swatch.title = {
@@ -508,11 +570,17 @@ function start(cfg: OverlayConfig): void {
       const top = annotation.sourceHints[0];
       where.textContent =
         top?.kind === "loc" ? `${top.file}:${top.line}` : annotation.page.path || location.pathname;
-      body.append(textLine, where);
+      const position = el("div", "position");
+      position.textContent = positionMessage(
+        locations.get(annotation.id) ?? resolveAnnotation(annotation),
+      );
+      body.append(textLine, where, position);
       item.append(swatch, body);
       item.addEventListener("click", () => {
-        if (annotation.page.path === location.pathname) {
-          annotationElement(annotation)?.scrollIntoView({
+        const located = resolveAnnotation(annotation);
+        locations.set(annotation.id, located);
+        if (located.kind === "confirmed") {
+          located.element.scrollIntoView({
             behavior: "smooth",
             block: "center",
             inline: "nearest",
@@ -528,9 +596,9 @@ function start(cfg: OverlayConfig): void {
     panel?.remove();
     panel = null;
     listButton.dataset["on"] = "false";
-    statusButton.dataset["on"] = "false";
+    dot.dataset["on"] = "false";
     listButton.setAttribute("aria-expanded", "false");
-    statusButton.setAttribute("aria-expanded", "false");
+    dot.setAttribute("aria-expanded", "false");
   }
 
   function togglePanel(kind: "list" | "status"): void {
@@ -542,7 +610,7 @@ function start(cfg: OverlayConfig): void {
     panel.setAttribute("role", "region");
     panel.setAttribute("aria-label", kind === "list" ? "Comments" : "Review status");
     root.append(panel);
-    const button = kind === "list" ? listButton : statusButton;
+    const button = kind === "list" ? listButton : dot;
     button.dataset["on"] = "true";
     button.setAttribute("aria-expanded", "true");
     renderPanel();
@@ -562,7 +630,7 @@ function start(cfg: OverlayConfig): void {
 
   toggle.addEventListener("click", () => setAnnotating(!annotating));
   listButton.addEventListener("click", () => togglePanel("list"));
-  statusButton.addEventListener("click", () => togglePanel("status"));
+  dot.addEventListener("click", () => togglePanel("status"));
 
   document.addEventListener(
     "pointermove",
@@ -681,7 +749,7 @@ function start(cfg: OverlayConfig): void {
         host.style.display = "none";
       } else {
         host.style.display = "";
-        reposition();
+        scheduleReposition(false);
         if (focusBeforeHide?.isConnected) focusBeforeHide.focus({ preventScroll: true });
         focusBeforeHide = null;
       }
@@ -724,21 +792,97 @@ function start(cfg: OverlayConfig): void {
   });
 
   let frame = 0;
-  const reposition = () => {
-    if (frame) return;
-    frame = requestAnimationFrame(() => {
+  let mustResolve = true;
+  const resizeObserver = new ResizeObserver(() => scheduleReposition(false));
+
+  function scheduleReposition(resolveElements: boolean): void {
+    mustResolve ||= resolveElements;
+    if (annotations.size === 0) {
+      if (frame) cancelAnimationFrame(frame);
       frame = 0;
-      renderPins(false);
-      const current = openCard ? annotations.get(openCard.dataset["for"] ?? "") : null;
-      const rect = current ? locate(current) : null;
-      if (openCard && rect) place(openCard, { x: rect.left + 28, y: rect.top });
-      if (composerTarget?.isConnected) showHighlight(composerTarget);
-      else if (composerTarget) hide(highlight, label);
-      else if (annotating && hovered?.isConnected) showHighlight(hovered);
-    });
-  };
-  window.addEventListener("scroll", reposition, true);
-  window.addEventListener("resize", reposition);
+      locations.clear();
+      resizeObserver.disconnect();
+      renderPins();
+      if (!composerTarget && !hovered) return;
+    }
+    if (frame) return;
+    frame = requestAnimationFrame(flushPositions);
+  }
+
+  function flushPositions(): void {
+    frame = 0;
+    const resolving = mustResolve;
+    mustResolve = false;
+    if (resolving) {
+      locations.clear();
+      for (const annotation of annotations.values()) {
+        locations.set(annotation.id, resolveAnnotation(annotation));
+      }
+      resizeObserver.disconnect();
+      resizeObserver.observe(document.documentElement);
+      for (const located of locations.values()) {
+        if (located.kind === "confirmed") resizeObserver.observe(located.element);
+      }
+    } else {
+      for (const [id, located] of locations) {
+        if (located.kind !== "confirmed") continue;
+        if (!located.element.isConnected) {
+          mustResolve = true;
+          continue;
+        }
+        locations.set(id, {
+          kind: "confirmed",
+          element: located.element,
+          rect: located.element.getBoundingClientRect(),
+        });
+      }
+      if (mustResolve) return scheduleReposition(true);
+    }
+
+    renderPins();
+    if (resolving && panel) {
+      for (const item of panel.querySelectorAll<HTMLElement>(".item[data-for]")) {
+        const located = locations.get(item.dataset["for"] ?? "");
+        const state = item.querySelector<HTMLElement>(".position");
+        if (state && located) state.textContent = positionMessage(located);
+      }
+    }
+    if (openCard) {
+      const located = locations.get(openCard.dataset["for"] ?? "");
+      const state = openCard.querySelector<HTMLElement>(".position");
+      if (state && located) state.textContent = positionMessage(located);
+      if (located?.kind === "confirmed") {
+        place(openCard, { x: located.rect.left + 28, y: located.rect.top });
+      }
+    }
+    if (composerTarget?.isConnected) showHighlight(composerTarget);
+    else if (composerTarget) hide(highlight, label);
+    else if (annotating && hovered?.isConnected) showHighlight(hovered);
+  }
+
+  const mutationObserver = new MutationObserver((records) => {
+    if (annotations.size === 0 && !composerTarget && !hovered) return;
+    if (records.every((record) => record.target === host || host.contains(record.target))) return;
+    scheduleReposition(true);
+  });
+  mutationObserver.observe(document.documentElement, {
+    attributes: true,
+    characterData: true,
+    childList: true,
+    subtree: true,
+  });
+  window.addEventListener("scroll", () => scheduleReposition(false), true);
+  window.addEventListener("resize", () => scheduleReposition(false));
+  window.addEventListener("popstate", () => scheduleReposition(true));
+  window.addEventListener("hashchange", () => scheduleReposition(true));
+  // pushState/replaceState do not emit popstate or require a DOM mutation.
+  for (const method of ["pushState", "replaceState"] as const) {
+    const original = history[method];
+    history[method] = function (...args: Parameters<History["pushState"]>) {
+      original.apply(this, args);
+      scheduleReposition(true);
+    };
+  }
 
   /* ----------------------------------------------------------------- utils --- */
 }
@@ -770,28 +914,101 @@ function moveTo(node: HTMLElement, rect: DOMRect): void {
   node.style.display = "";
 }
 
-function annotationElement(annotation: Annotation): Element | null {
-  const hint = annotation.sourceHints.find((h) => h.kind === "selector");
-  if (!hint) return null;
+interface ReplyDraft {
+  value: string;
+  start: number;
+  end: number;
+  focused: boolean;
+}
+
+type LocatedAnnotation =
+  | { kind: "confirmed"; element: Element; rect: DOMRect }
+  | { kind: "ambiguous" }
+  | { kind: "missing" }
+  | { kind: "different-page"; path: string };
+
+function positionMessage(located: LocatedAnnotation): string {
+  if (located.kind === "confirmed") return "Position confirmed";
+  if (located.kind === "ambiguous") return "Position unconfirmed — multiple matching elements";
+  if (located.kind === "different-page") return `Different page — ${located.path || "/"}`;
+  return "Element not found — position unconfirmed";
+}
+
+function resolveAnnotation(annotation: Annotation): LocatedAnnotation {
+  if (annotation.page.path !== location.pathname) {
+    return { kind: "different-page", path: annotation.page.path };
+  }
+
+  const selectorHint = annotation.sourceHints.find((h) => h.kind === "selector");
+  const hasIdentity =
+    selectorHint?.text ||
+    selectorHint?.ariaLabel ||
+    annotation.sourceHints.some(
+      (hint) =>
+        (hint.kind === "data" && Object.keys(hint.attrs).length > 0) ||
+        (hint.kind === "loc" && hint.via === "data-review-src"),
+    );
+  if (!hasIdentity) return { kind: "missing" };
+  const tag = annotation.element.tag.toLowerCase();
+  // Include descendants of hint holders; a structural selector alone cannot
+  // distinguish repeated icon buttons or a replacement at the same index.
+  const candidates = queryAll(tag).filter((candidate) => matchesIdentity(annotation, candidate));
+  if (candidates.length === 1) return confirmed(candidates[0]!);
+  return candidates.length > 1 ? { kind: "ambiguous" } : { kind: "missing" };
+}
+
+function matchesIdentity(annotation: Annotation, candidate: Element): boolean {
+  if (candidate.tagName.toLowerCase() !== annotation.element.tag.toLowerCase()) return false;
+  const selector = annotation.sourceHints.find((hint) => hint.kind === "selector");
+  if (
+    selector?.ariaLabel !== undefined &&
+    candidate.getAttribute("aria-label") !== selector.ariaLabel
+  )
+    return false;
+  if (selector?.text !== undefined && reviewText(candidate).slice(0, 120) !== selector.text)
+    return false;
+  for (const hint of annotation.sourceHints) {
+    if (hint.kind === "data") {
+      for (const [name, value] of Object.entries(hint.attrs)) {
+        if (!closestAttribute(candidate, name, value)) return false;
+      }
+    } else if (hint.kind === "loc" && hint.via === "data-review-src") {
+      const value = candidate.closest("[data-review-src]")?.getAttribute("data-review-src");
+      const line = `${hint.file}:${hint.line}`;
+      if (value !== line && !value?.startsWith(`${line}:`)) return false;
+    }
+  }
+  return true;
+}
+
+function closestAttribute(candidate: Element, name: string, value: string): boolean {
   try {
-    return document.querySelector(hint.value);
+    return candidate.closest(`[${escapeCss(name)}="${escapeCss(value)}"]`) !== null;
   } catch {
-    return null;
+    return false;
   }
 }
 
-function locate(annotation: Annotation): DOMRect | null {
-  const selectorHint = annotation.sourceHints.find((h) => h.kind === "selector");
-  if (selectorHint && selectorHint.kind === "selector") {
-    const found = annotationElement(annotation);
-    if (found) return found.getBoundingClientRect();
-    const { bbox } = selectorHint;
-    return new DOMRect(bbox.x - window.scrollX, bbox.y - window.scrollY, bbox.width, bbox.height);
+function queryAll(selector: string): Element[] {
+  try {
+    return Array.from(document.querySelectorAll(selector));
+  } catch {
+    return [];
   }
-  return null;
+}
+
+function escapeCss(value: string): string {
+  return typeof CSS !== "undefined" && CSS.escape
+    ? CSS.escape(value)
+    : value.replace(/["\\]/g, "\\$&");
+}
+
+function confirmed(element: Element): LocatedAnnotation {
+  return { kind: "confirmed", element, rect: element.getBoundingClientRect() };
 }
 
 function openQuestion(annotation: Annotation): boolean {
+  if (annotation.status === "resolved" || annotation.status === "dismissed") return false;
   const last = annotation.questions[annotation.questions.length - 1];
   return last?.from === "agent";
 }

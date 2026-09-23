@@ -18,8 +18,8 @@ If `$ARGUMENTS` is empty, ask what to review and stop.
 in `.html` or `.htm`. The server will serve that exact file and the agent will
 edit that exact file.
 
-**A URL** — localhost must use `http://localhost`, `http://127.0.0.1`, or
-`http://[::1]`. A non-local URL must use HTTPS and the user must explicitly say
+**A URL** — localhost may use HTTP or HTTPS with `localhost`, `127.0.0.1`, or
+`[::1]`. A non-local URL must use HTTPS and the user must explicitly say
 that it is a staging origin they own, administer, and trust. If ownership and
 trust are not explicit, ask before continuing. Never opt in for a third-party
 page, a URL containing credentials, or remote HTTP.
@@ -29,6 +29,8 @@ page, a URL containing credentials, or remote HTTP.
 ```sh
 npx -y browser-review@^0.3.0 open <target> --project-dir "$CLAUDE_PROJECT_DIR" --json
 # For an explicitly trusted remote target, append: --allow-remote
+# For a private CA on an HTTPS target, append: --ca-file <pem-path>
+# For an explicit Netscape cookie jar on HTTPS, append: --cookie-file <path>
 ```
 
 It prints one line of JSON: `sessionId`, `reviewUrl`, `handoffMcpUrl`,
@@ -38,8 +40,13 @@ guess any of these values.
 If the command fails, show the error as-is. The usual causes are a dev server
 that is not running (proxy mode) and a path that does not exist.
 
-Append `--allow-remote` only for the explicitly trusted HTTPS case above. If
-staging needs Basic or Bearer authentication, have the user supply it through
+Append `--allow-remote` only for the explicitly trusted HTTPS case above, unless
+the exact origin was previously added with `browser-review trust add`. A trust
+entry permits later startup only; it does not disable TLS verification, DNS
+pinning, or address restrictions. Use `--ca-file` only for an explicitly chosen
+PEM CA bundle and `--cookie-file` only for an explicitly chosen Netscape-format
+cookie jar. Both are read for that HTTPS session only. If staging needs Basic or
+Bearer authentication, have the user supply it through
 `BROWSER_REVIEW_REMOTE_AUTHORIZATION` in the command environment; never put a
 credential in the URL, CLI arguments, output, or handoff block.
 
@@ -49,7 +56,8 @@ Give them, in this order:
 
 1. **The review URL**, and that they should open it. On macOS you may run
    `open <reviewUrl>` for them; on Linux, `xdg-open <reviewUrl>`. Say what you
-   are doing rather than opening a browser silently.
+   are doing rather than opening a browser silently. On Windows, give the URL
+   for manual opening; the CLI support is experimental and best-effort.
 2. **How to use it**: click _Comment_ in the toolbar at the bottom right, then
    click any element on the page and type what should change. Shift-drag selects
    a region instead of a single element.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { randomBytes } from "node:crypto";
+import { randomBytes, X509Certificate } from "node:crypto";
 import { EventEmitter } from "node:events";
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
@@ -23,6 +23,7 @@ import { createScreenshotter } from "./screenshot.js";
 import { injectOverlay, instrumentHtml } from "./instrument.js";
 import { proxyRequest, proxyUpgrade, type ProxyOptions } from "./proxy.js";
 import { RemoteCookieJar } from "./cookie-jar.js";
+import { importCookieFile } from "./cookie-file.js";
 import {
   classifyOrigin,
   contentTypeFor,
@@ -35,6 +36,7 @@ import {
 import { pendingOf, readSessionFile, updateSessionFile, writeSessionFile } from "./store.js";
 import { sessionsDir } from "./paths.js";
 import { remoteAuthorization, resolveUpstream, type ResolveHostname } from "./upstream.js";
+import { isPathWithin, portableSourcePath } from "./path-util.js";
 
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 
@@ -63,6 +65,10 @@ export interface StartOptions {
   resolveHostname?: ResolveHostname;
   /** Additional trusted CA material used by synthetic integration tests. */
   tlsCa?: string | Buffer;
+  /** PEM bundle read once for this upstream session. */
+  caFile?: string;
+  /** Netscape cookie jar read once for this upstream session. */
+  cookieFile?: string;
   /** In-memory credential injection used by embedders and isolated tests. */
   remoteAuthorization?: string;
 }
@@ -84,6 +90,23 @@ function overlayBundlePath(): string {
     path.join(MODULE_DIR, "..", "dist", "overlay.js"),
   ];
   return candidates.find((candidate) => fsSync.existsSync(candidate)) ?? candidates[0]!;
+}
+
+function validateCaBundle(ca: Buffer): void {
+  const text = ca.toString("utf8");
+  const certificatePattern = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
+  const certificates = [...text.matchAll(certificatePattern)].map((match) => match[0]);
+  if (certificates.length === 0 || text.replace(certificatePattern, "").trim() !== "") {
+    throw new Error("CA file does not contain a valid PEM certificate bundle");
+  }
+  try {
+    for (const certificate of certificates) {
+      const parsed = new X509Certificate(certificate);
+      if (parsed.raw.byteLength === 0) throw new Error("empty certificate");
+    }
+  } catch (error) {
+    throw new Error("CA file does not contain a valid PEM certificate bundle", { cause: error });
+  }
 }
 
 export async function startReviewServer(opts: StartOptions): Promise<RunningServer> {
@@ -114,7 +137,25 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
         opts.remoteAuthorization ?? process.env["BROWSER_REVIEW_REMOTE_AUTHORIZATION"],
       )
     : undefined;
-  const cookieJar = upstream?.remote ? new RemoteCookieJar() : undefined;
+  if ((opts.caFile || opts.tlsCa) && upstream?.url.protocol !== "https:") {
+    throw new Error("--ca-file requires an HTTPS proxy target");
+  }
+  let tlsCa = opts.tlsCa;
+  if (opts.caFile) {
+    const stat = await fs.stat(opts.caFile).catch(() => null);
+    if (!stat?.isFile() || stat.size > 1024 * 1024) {
+      throw new Error("CA file must be a readable PEM file no larger than 1 MiB");
+    }
+    tlsCa = await fs.readFile(opts.caFile);
+    validateCaBundle(tlsCa);
+  }
+  const cookieJar =
+    upstream && (upstream.remote || opts.cookieFile)
+      ? new RemoteCookieJar(upstream.url)
+      : undefined;
+  if (upstream && opts.cookieFile && cookieJar) {
+    await importCookieFile(opts.cookieFile, upstream.url, cookieJar);
+  }
   const proxySockets = new Set<Duplex>();
 
   const server = http.createServer();
@@ -173,7 +214,7 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
         ...(upstream.lookup ? { lookup: upstream.lookup } : {}),
         ...(authorization ? { authorization } : {}),
         ...(cookieJar ? { cookieJar } : {}),
-        ...(opts.tlsCa ? { tlsCa: opts.tlsCa } : {}),
+        ...(tlsCa ? { tlsCa } : {}),
         basePath,
         selfOrigin,
         overlayUrl: `${controlBase}/overlay.js`,
@@ -207,7 +248,7 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
   const readHtml = async (file: string): Promise<string> => {
     const raw = await fs.readFile(file, "utf8");
     const projectRoot = await fs.realpath(opts.projectDir);
-    const rel = path.relative(projectRoot, file) || path.basename(file);
+    const rel = portableSourcePath(path.relative(projectRoot, file) || path.basename(file));
     const instrumented = instrumentHtml(raw, rel);
     return injectOverlay(instrumented, `${controlBase}/overlay.js`, overlayConfig);
   };
@@ -220,8 +261,7 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
     } catch {
       return sendNotFound(res);
     }
-    const root = path.resolve(staticRoot);
-    if (resolved !== root && !resolved.startsWith(root + path.sep)) return sendNotFound(res);
+    if (!isPathWithin(staticRoot, resolved)) return sendNotFound(res);
 
     let stat: fsSync.Stats;
     try {

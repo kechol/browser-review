@@ -10,6 +10,8 @@ import WebSocket, { WebSocketServer } from "ws";
 import { RemoteCookieJar } from "../src/cookie-jar.js";
 import { proxyRequest, proxyUpgrade, rewriteLocation, type ProxyOptions } from "../src/proxy.js";
 import { createPinnedLookup } from "../src/upstream.js";
+import { startReviewServer } from "../src/server.js";
+import { readSessionFile } from "../src/store.js";
 
 const opts = {
   upstream: new URL("http://localhost:5173"),
@@ -60,10 +62,13 @@ it("distinguishes protocol-relative redirects from absolute paths", () => {
 describe("remote HTTPS and WSS proxy boundaries", () => {
   let fixtureDir: string;
   let ca: string;
+  let caPath: string;
   let key: string;
   let cert: string;
   let upstream: https.Server;
   let upstreamPort: number;
+  let expiredUpstream: https.Server;
+  let expiredPort: number;
   let websocketServer: WebSocketServer;
   const requests: Array<{ url: string; headers: http.IncomingHttpHeaders; servername?: string }> =
     [];
@@ -71,7 +76,7 @@ describe("remote HTTPS and WSS proxy boundaries", () => {
   beforeAll(async () => {
     fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "browser-review-tls-"));
     const caKeyPath = path.join(fixtureDir, "ca-key.pem");
-    const caPath = path.join(fixtureDir, "ca.pem");
+    caPath = path.join(fixtureDir, "ca.pem");
     const keyPath = path.join(fixtureDir, "server-key.pem");
     const csrPath = path.join(fixtureDir, "server.csr");
     const certPath = path.join(fixtureDir, "server.pem");
@@ -111,7 +116,10 @@ describe("remote HTTPS and WSS proxy boundaries", () => {
       ],
       { stdio: "ignore" },
     );
-    await fs.writeFile(extensionsPath, "subjectAltName=DNS:staging.example.test\n");
+    await fs.writeFile(
+      extensionsPath,
+      "subjectAltName=DNS:staging.example.test,DNS:localhost,IP:127.0.0.1\n",
+    );
     execFileSync(
       "openssl",
       [
@@ -139,6 +147,54 @@ describe("remote HTTPS and WSS proxy boundaries", () => {
       fs.readFile(keyPath, "utf8"),
       fs.readFile(certPath, "utf8"),
     ]);
+
+    const expiredKeyPath = path.join(fixtureDir, "expired-key.pem");
+    const expiredCsrPath = path.join(fixtureDir, "expired.csr");
+    const expiredCertPath = path.join(fixtureDir, "expired.pem");
+    execFileSync(
+      "openssl",
+      [
+        "req",
+        "-newkey",
+        "rsa:2048",
+        "-nodes",
+        "-keyout",
+        expiredKeyPath,
+        "-out",
+        expiredCsrPath,
+        "-subj",
+        "/CN=staging.example.test",
+      ],
+      { stdio: "ignore" },
+    );
+    execFileSync(
+      "openssl",
+      [
+        "x509",
+        "-req",
+        "-in",
+        expiredCsrPath,
+        "-CA",
+        caPath,
+        "-CAkey",
+        caKeyPath,
+        "-CAcreateserial",
+        "-out",
+        expiredCertPath,
+        "-days",
+        "0",
+        "-sha256",
+        "-extfile",
+        extensionsPath,
+      ],
+      { stdio: "ignore" },
+    );
+    expiredUpstream = https.createServer({
+      key: await fs.readFile(expiredKeyPath),
+      cert: await fs.readFile(expiredCertPath),
+    });
+    expiredUpstream.on("request", (_req, res) => res.end("expired"));
+    expiredPort = await listen(expiredUpstream);
 
     upstream = https.createServer({ key, cert }, (req, res) => {
       requests.push({
@@ -205,6 +261,7 @@ describe("remote HTTPS and WSS proxy boundaries", () => {
     for (const client of websocketServer.clients) client.terminate();
     await new Promise<void>((resolve) => websocketServer.close(() => resolve()));
     await close(upstream);
+    await close(expiredUpstream);
     await fs.rm(fixtureDir, { recursive: true, force: true });
   });
 
@@ -343,8 +400,31 @@ describe("remote HTTPS and WSS proxy boundaries", () => {
     }
   });
 
+  it("rejects an expired certificate even when its CA and hostname are trusted", async () => {
+    const expired = await startProxy(
+      makeOptions({ upstream: new URL(`https://staging.example.test:${expiredPort}`) }),
+    );
+    try {
+      expect((await fetch(`${expired.origin}/account`)).status).toBe(502);
+    } finally {
+      await close(expired.server);
+    }
+  });
+
   it("filters WebSocket 101 state and stores its cookie only in the session jar", async () => {
-    const options = makeOptions();
+    const origin = new URL(`https://staging.example.test:${upstreamPort}`);
+    const jar = new RemoteCookieJar(origin);
+    jar.import([
+      {
+        name: "imported",
+        value: "socket-secret",
+        domain: "staging.example.test",
+        hostOnly: true,
+        path: "/",
+        secure: true,
+      },
+    ]);
+    const options = makeOptions({ cookieJar: jar });
     const review = await startProxy(options);
     const socket = new WebSocket(`${review.origin.replace("http", "ws")}/socket`, {
       origin: review.origin,
@@ -368,15 +448,82 @@ describe("remote HTTPS and WSS proxy boundaries", () => {
       expect(upgradeHeaders?.["clear-site-data"]).toBeUndefined();
       const handshake = requests.at(-1)!;
       expect(handshake.headers.authorization).toBe("Bearer session-one");
-      expect(handshake.headers.cookie).toBeUndefined();
+      expect(handshake.headers.cookie).toBe("imported=socket-secret");
       expect(handshake.headers.referer).toBeUndefined();
       expect(handshake.headers.origin).toBe(`https://staging.example.test:${upstreamPort}`);
 
       const account = await fetch(`${review.origin}/account`);
-      expect(await account.json()).toEqual({ cookie: "socket=ready" });
+      expect(await account.json()).toEqual({ cookie: "imported=socket-secret; socket=ready" });
     } finally {
       socket.terminate();
       await close(review.server);
+    }
+  });
+
+  it("uses CA and Netscape cookie files for one local HTTPS session only", async () => {
+    const previousState = process.env["XDG_STATE_HOME"];
+    const state = path.join(fixtureDir, "session-state");
+    process.env["XDG_STATE_HOME"] = state;
+    const cookieFile = path.join(fixtureDir, "import-cookies.txt");
+    await fs.writeFile(cookieFile, "localhost\tFALSE\t/\tTRUE\t0\timported\tsynthetic-secret\n");
+    const id = `TLS${Date.now()}`;
+    const token = "t".repeat(32);
+    const running = await startReviewServer({
+      id,
+      token,
+      mode: "proxy",
+      target: `https://localhost:${upstreamPort}`,
+      projectDir: fixtureDir,
+      port: 0,
+      caFile: caPath,
+      cookieFile,
+    });
+    try {
+      const response = await fetch(`http://127.0.0.1:${running.session.port}/r/${token}/account`);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ cookie: "imported=synthetic-secret" });
+      const stored = JSON.stringify(await readSessionFile(id));
+      expect(stored).not.toContain("synthetic-secret");
+      expect(stored).not.toContain(cookieFile);
+      expect(stored).not.toContain(ca);
+    } finally {
+      await running.close();
+      if (previousState === undefined) delete process.env["XDG_STATE_HOME"];
+      else process.env["XDG_STATE_HOME"] = previousState;
+    }
+  });
+
+  it("keeps standard TLS verification and rejects CA use for HTTP", async () => {
+    const previousState = process.env["XDG_STATE_HOME"];
+    process.env["XDG_STATE_HOME"] = path.join(fixtureDir, "tls-rejection-state");
+    const untrusted = await startReviewServer({
+      id: `UNTRUSTED${Date.now()}`,
+      token: "u".repeat(32),
+      mode: "proxy",
+      target: `https://localhost:${upstreamPort}`,
+      projectDir: fixtureDir,
+      port: 0,
+    });
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:${untrusted.session.port}/r/${untrusted.session.token}/account`,
+      );
+      expect(response.status).toBe(502);
+      await expect(
+        startReviewServer({
+          id: `HTTPCA${Date.now()}`,
+          token: "h".repeat(32),
+          mode: "proxy",
+          target: "http://localhost:65534",
+          projectDir: fixtureDir,
+          port: 0,
+          caFile: caPath,
+        }),
+      ).rejects.toThrow(/HTTPS/);
+    } finally {
+      await untrusted.close();
+      if (previousState === undefined) delete process.env["XDG_STATE_HOME"];
+      else process.env["XDG_STATE_HOME"] = previousState;
     }
   });
 });

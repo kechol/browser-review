@@ -19,8 +19,11 @@ const NOTICE =
 
 function stateDir() {
   const xdg = process.env.XDG_STATE_HOME;
-  const base = xdg && xdg.trim() !== "" ? xdg : path.join(homedir(), ".local", "state");
-  return path.join(base, "browser-review", "sessions");
+  const root =
+    xdg && xdg.trim() !== ""
+      ? path.join(xdg, "browser-review")
+      : path.join(homedir(), ".browser-review");
+  return path.join(root, "sessions");
 }
 
 function alive(pid) {

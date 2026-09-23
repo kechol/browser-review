@@ -19,8 +19,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Windows is deliberately absent: the server, the state directory and
-        # the `open` helper are all written for POSIX. See the README.
         os: [ubuntu-latest, macos-latest]
         node: [24, 26]
     steps:
@@ -39,6 +37,21 @@ jobs:
       - run: pnpm run check:packages
       - run: pnpm run check:versions
       - run: pnpm run check:no-egress
+
+  windows-smoke:
+    name: Windows best-effort smoke
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm run typecheck
+      - run: pnpm exec vitest run packages/browser-review/test/paths.test.ts packages/browser-review/test/windows-smoke.test.ts
 
   licenses:
     name: Dependency licenses

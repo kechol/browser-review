@@ -141,3 +141,21 @@ it("reselects the latest active matching session without falling back for commen
   expect((await resolve())?.session.id).toBe("01BBB");
   expect(runHook()).toBe("");
 });
+
+it("uses the new home fallback without reading or changing the former fallback", async () => {
+  const home = path.join(tmp, "isolated-home");
+  vi.stubEnv("HOME", home);
+  vi.stubEnv("XDG_STATE_HOME", undefined);
+  await fs.mkdir(home, { recursive: true });
+  await put("01NEW", project);
+
+  const oldSessions = path.join(home, ".local", "state", "browser-review", "sessions");
+  const oldFile = path.join(oldSessions, "01OLD.json");
+  const oldContents = `${JSON.stringify({ marker: "must remain untouched" })}\n`;
+  await fs.mkdir(oldSessions, { recursive: true });
+  await fs.writeFile(oldFile, oldContents);
+
+  expect(runHook()).toContain("comment-01NEW");
+  expect(runHook()).not.toContain("01OLD");
+  expect(await fs.readFile(oldFile, "utf8")).toBe(oldContents);
+});

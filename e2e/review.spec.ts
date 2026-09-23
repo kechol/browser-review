@@ -88,8 +88,17 @@ test("the overlay loads and connects", async ({ page }) => {
   await expect(toolbar).toBeVisible();
   const dot = page.locator("#browser-review-overlay .dot");
   await expect(dot).toHaveAttribute("data-state", "open");
-  await expect(dot).toHaveAttribute("title", "Connected to the review server");
-  await expect(dot).toHaveAccessibleName("Connected to the review server");
+  await expect(dot).toHaveAttribute("title", "Review status (s) — Connected to the review server");
+  await expect(dot).toHaveAccessibleName("Review status — Connected to the review server");
+  const toolbarBox = await toolbar.boundingBox();
+  const dotBox = await dot.boundingBox();
+  expect(toolbarBox).not.toBeNull();
+  expect(dotBox).not.toBeNull();
+  const leftGap = dotBox!.x - toolbarBox!.x;
+  const topGap = dotBox!.y - toolbarBox!.y;
+  const bottomGap = toolbarBox!.y + toolbarBox!.height - dotBox!.y - dotBox!.height;
+  expect(Math.abs(leftGap - topGap)).toBeLessThanOrEqual(2);
+  expect(Math.abs(leftGap - bottomGap)).toBeLessThanOrEqual(2);
 });
 
 test("a comment on the headline arrives with the source line attached", async ({ page }) => {
@@ -186,10 +195,14 @@ test("the page reloads itself when the file under review changes", async ({ page
   });
 });
 
-test("keyboard shortcuts open selection, comments, and live status", async ({ page }) => {
+test("keyboard shortcuts and the connection indicator open live status", async ({ page }) => {
   await page.goto(session.reviewUrl);
   const overlay = page.locator("#browser-review-overlay");
   await expect(overlay.locator(".dot")).toHaveAttribute("data-state", "open");
+  const statusTrigger = overlay.locator('[data-action="status"]');
+  await expect(statusTrigger).toHaveAttribute("aria-label", /Review status — Connected/);
+  await expect(statusTrigger).toHaveText("");
+  await expect(overlay.locator(".toolbar")).not.toContainText("Status");
   await page.keyboard.press("c");
   await expect(overlay.locator('[data-action="annotate"]')).toHaveAttribute("data-on", "true");
   await page.keyboard.press("Escape");
@@ -202,9 +215,11 @@ test("keyboard shortcuts open selection, comments, and live status", async ({ pa
   await expect(status).toContainText("Connected");
   await expect(status).toContainText(control("mcp"));
   await expect(status).toContainText("html-file");
+  await expect(statusTrigger).toHaveAttribute("aria-expanded", "true");
   await page.keyboard.press("s");
   await expect(status).toBeHidden();
-  await overlay.locator('[data-action="status"]').click();
+  await expect(statusTrigger).toHaveAttribute("aria-expanded", "false");
+  await statusTrigger.click();
   await expect(status).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(status).toBeHidden();

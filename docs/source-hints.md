@@ -95,8 +95,15 @@ classes matches half the page, which is worse than no selector at all. On a
 Tailwind-styled app you should expect this hint to be structural
 (`div > div:nth-of-type(3) > button`) and to lean on `text` instead.
 
-The `bbox` is in page coordinates and is what lets a pin stay roughly in place
-when the element can no longer be found at all.
+The `bbox` records where the element was when the annotation was created. It is
+not treated as proof that the same element still occupies that position. After
+DOM changes, the overlay confirms an unambiguous candidate from the saved tag
+and available selector, text, ARIA, data, and source-location hints. If those
+hints conflict, match multiple elements, or point at another pathname, the
+comment stays readable in the list and card as an unconfirmed location, but the
+overlay does not place a normal pin or scroll to a guessed element. Two truly
+identical repeated elements cannot always be distinguished without a stable id
+or source hint.
 
 ## What never travels
 

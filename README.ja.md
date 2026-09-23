@@ -24,14 +24,21 @@ MCP を話せるエージェントや、`curl` を使うシェルスクリプト
 レビューサーバーが `127.0.0.1` で起動し、URL を返します。開くと、いつもどおりのページの隅に
 小さなツールバーが表示されます。**Comment** を押して要素をクリックし、変えてほしいことを書きます。
 
-キーボードショートカットは次のとおりです。**c** で要素選択、**l** でコメント一覧、**s** で
-ステータス（接続状態、モード、バージョン、MCP URL）を切り替えます。`Cmd + \` でレビュー UI 全体を
+接続インジケーターをクリックするか **s** を押すと、ステータス（接続状態、モード、バージョン、
+MCP URL）を切り替えられます。ほかのショートカットは、**c** が要素選択、**l** がコメント一覧です。
+`Cmd + \` でレビュー UI 全体を
 隠したり戻したりでき、開いていたパネルとコメントの下書きはそのまま残ります。隠している間は、
 レビュー用のショートカットと要素の選択は止まります。入力欄やエディターで文字を打っている間は
 c / l / s は効きません。**Escape** でパネルを閉じるか、要素の選択をやめます。コメント一覧は改行を
 保ったまま全文を表示し、長いものはスクロールできます。ステータスの
 **Copy instructions for Claude Code** を使うと、MCP URL と貼り付けてすぐ使えるレビュー用の
 プロンプトをまとめてコピーできます。
+
+ピンは、保存した tag と、利用できるテキスト・ARIA・data 属性・ソース位置が 1 つの要素を
+矛盾なく指す間だけ追従します。要素が消えた、候補が複数になった、別の pathname に移った場合は、
+別要素へ推測でピンを付けず、コメント一覧とカードに「位置未確認」として残します。DOM とレイアウトの
+更新は animation frame ごとにまとめます。再接続後は一覧・ピン・開いているカードを最新状態へ戻し、
+同じタブで入力中だった返信と focus/selection は保持します。
 
 ```
 /browser-review:resolve
@@ -116,6 +123,32 @@ MCP を使わずに、HTTP フィードを `curl` で読み書きすることも
 | **ライブリロード**               | あり。サーバーがファイルを監視する               | 開発サーバー自身の HMR をそのまま通す                                         |
 | **注意点**                       | —                                                | オーバーレイを読み込めるよう、開発サーバーの `Content-Security-Policy` を外す |
 
+localhost は HTTP と HTTPS に対応します。標準で信頼されない開発用 CA は、そのセッションだけに
+`--ca-file` で渡せます。TLS 検証を無効にするオプションはありません。
+
+```sh
+npx browser-review open https://localhost:5173 --ca-file ./test-ca.pem --json
+```
+
+自分で管理している staging の exact HTTPS origin は、起動ごとの `--allow-remote` または明示的な
+登録で許可します。登録に path・userinfo・wildcard は使えず、DNS pinning、危険アドレス拒否、TLS 検証を
+迂回しません。remove は次回起動から有効で、動いているセッションは切断しません。
+
+```sh
+npx browser-review trust add https://staging.example.test
+npx browser-review trust list
+npx browser-review trust remove https://staging.example.test
+```
+
+認証済みセッションには Netscape 形式の Cookie file を明示できます。1 MiB・1,000 件が上限で、
+内容は state、log、MCP、エラーへ保存・表示しません。Cookie は指定した scheme/host/port の
+セッション内 jar だけで使われ、HTTP と WebSocket の `Set-Cookie` 更新・削除も同じ jar に反映します。
+
+```sh
+npx browser-review open https://staging.example.test/admin \
+  --cookie-file ./staging-cookies.txt --json
+```
+
 ## コードの見つけ方
 
 要素がクリックされると、オーバーレイは手がかりを残らず拾い、DOM ノードとソースの位置を
@@ -151,25 +184,28 @@ JSX 要素に `data-review-src` を付けるプラグインです。Babel が報
 ## 動作要件
 
 - Node.js 24 以上
-- macOS または Linux。**Windows には対応していません**。サーバー、状態ディレクトリの構成、
-  ブラウザを開く処理がすべて POSIX 前提で書かれているためです。パッチは歓迎します。作業の大半は
-  パスの扱いです。
+- macOS または Linux。Windows の CLI は experimental / best-effort です。build、path 境界、state
+  store、open/status/close の smoke は CI にありますが、今回 Windows 実機では検証していません。
+  返された URL は手動で開いてください。Claude Code hook の展開や、すべての filesystem/ACL・process
+  環境での動作は保証しません。
 - プラグインのマーケットプレイス、プラグインの MCP サーバー、`UserPromptSubmit` での
   `hookSpecificOutput.additionalContext` に対応した、十分新しい Claude Code。
   `/plugin marketplace add` が使えない場合は、先に Claude Code を更新してください。
 
 ## やらないこと
 
-- **ネットワークに出ない。** サーバーは `127.0.0.1` で待ち受け、ホストを指定するオプションは
-  ありません。ソースのどこにも外部への通信はありません。ループバック以外の URL ホストが
-  ソースに現れると、CI がビルドを失敗させます。
-- **自分で動かしていないサイトはレビューしない。** 受け付けるのはローカルファイルと、
-  `http://localhost` / `http://127.0.0.1` の上流だけです。
+- **レビューサーバーをネットワークへ公開しない。** 待ち受けは常に `127.0.0.1` です。外向き通信は、
+  明示した localhost または検証・pin 済みの HTTPS/WSS upstream だけです。
+- **自分で管理していないサイトはレビューしない。** remote mode は任意サイトの sandbox ではありません。
 - **ページに入力した内容を読まない。** オーバーレイが送るのは、クリックした要素のマークアップ
   最大 500 文字だけです。`value` 属性は取り除き、フォームの値、Cookie、ブラウザのストレージには
   触れません。
-- **リポジトリの中に書き込まない。** セッションは `$XDG_STATE_HOME/browser-review/` に置くので、
-  誤ってコミットしてしまうものはありません。
+- **リポジトリの中に書き込まない。** セッションは既定で `~/.browser-review/`、非空の
+  `XDG_STATE_HOME` があれば `$XDG_STATE_HOME/browser-review/` に置きます。
+
+旧 fallback の `~/.local/state/browser-review/` は自動探索・移動・削除しません。旧場所を使い続けるなら、
+関連プロセスを停止してから `XDG_STATE_HOME="$HOME/.local/state"` を設定してください。必要な履歴の
+手動コピーも、すべての関連プロセスを停止した後だけ行ってください。
 
 ### 気をつけてほしいこと
 

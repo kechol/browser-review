@@ -47,13 +47,29 @@ upgrades are tunnelled byte for byte, so hot module reload keeps working.
 
 ### Things worth knowing
 
-**Localhost by default.** `http://localhost`, `http://127.0.0.1` and
-`http://[::1]` keep their existing behavior without another option. A trusted,
+**Localhost by default.** HTTP and HTTPS on `localhost`, `127.0.0.1`, and `::1`
+work without a remote opt-in. HTTPS still uses normal certificate and hostname
+verification; pass `--ca-file ./ca.pem` to use a PEM trust bundle for only that
+session. A trusted,
 self-managed staging origin can be selected explicitly:
 
 ```sh
 browser-review open https://staging.example.test/admin --allow-remote
 ```
+
+An exact origin can instead be registered for later startups:
+
+```sh
+browser-review trust add https://staging.example.test
+browser-review trust list
+browser-review trust remove https://staging.example.test
+```
+
+The registry is `trusted-origins.json` under the state root. It contains only a
+sorted array of canonical origins—not credentials or CA material. A registered
+origin still goes through unsafe-address rejection, one-time DNS resolution and
+pinning, and TLS verification. Removal affects later starts, not a running
+session.
 
 Remote mode accepts one HTTPS origin, rejects URL userinfo and special-use DNS
 answers, and pins the validated startup answer set. `Host`, TLS SNI and normal
@@ -132,6 +148,20 @@ The credential is inherited by the detached review process but is not placed in
 its command line, session file, logs, MCP output, or errors. Prefer a read-only
 staging account. The proxy does not promise that browsing is read-only: login
 and application mutations are both ordinary HTTP requests.
+
+Alternatively, `--cookie-file <path>` imports one Netscape-format cookie jar.
+It works with local or remote HTTPS, including `#HttpOnly_` records, and is
+limited to 1 MiB and 1,000 records. The file is read once and remains owned by
+the user; browser-review does not copy, rewrite, chmod, or delete it. Expired or
+out-of-scope cookies are ignored. Imported cookies and later `Set-Cookie`
+updates are restricted to the session's exact scheme, host, and port and use
+normal Domain, Path, Secure, expiry, and deletion rules for HTTP and WebSocket.
+Browser cookies are not mixed into a cookie-file session.
+
+Cookie contents and CA contents are not written to argv, logs, session JSON,
+MCP output, or errors. Their file paths are passed to the child process so it
+can read them once. There is no raw Cookie-header, JSON-cookie, ambient browser
+cookie, or insecure-TLS mode.
 
 Remote mode is not a content sandbox. The target page and its scripts can see
 the tokenized path and reach the review control API. Absolute URLs in HTML or

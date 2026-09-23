@@ -53,7 +53,7 @@ body:
     attributes:
       label: Server log
       description: >
-        From `$XDG_STATE_HOME/browser-review/logs/` (or
-        `~/.local/state/browser-review/logs/`). Check it for anything you would
+        From `$XDG_STATE_HOME/browser-review/logs/` when that variable is set,
+        or `~/.browser-review/logs/` otherwise. Check it for anything you would
         rather not publish before pasting.
       render: shell

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, it } from "vitest";
-import { tagSource } from "../src/index.js";
+import { portablePath, tagSource } from "../src/index.js";
 
 describe("tagSource", () => {
   it("tags a host element with the line it sits on", () => {
@@ -46,4 +46,8 @@ it("escapes filenames so quotes and newlines cannot break JSX", () => {
   expect(tagged).toContain("a&quot;&amp;&#10;.tsx");
   expect(tagged.split("\n")).toHaveLength(1);
   expect(tagSource(tagged, "other.tsx")).toBe(tagged);
+});
+
+it("emits portable source metadata for Windows paths", () => {
+  expect(portablePath("src\\components\\Button.tsx")).toBe("src/components/Button.tsx");
 });

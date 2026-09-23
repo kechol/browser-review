@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/scripts/inject-pending.sh",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/inject-pending.mjs\"",
             "timeout": 5,
             "statusMessage": "Checking for browser review comments"
           }

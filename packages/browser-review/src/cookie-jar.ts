@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-interface StoredCookie {
+export interface StoredCookie {
   name: string;
   value: string;
   domain: string;
@@ -27,16 +27,19 @@ function pathMatches(requestPath: string, cookiePath: string): boolean {
   return cookiePath.endsWith("/") || requestPath[cookiePath.length] === "/";
 }
 
-/** A small, origin-scoped RFC 6265 cookie jar used only by remote sessions. */
+/** A small RFC 6265 cookie jar scoped to one explicit HTTPS upstream origin. */
 export class RemoteCookieJar {
   readonly #cookies: StoredCookie[] = [];
   #nextOrder = 0;
+
+  constructor(readonly origin?: URL) {}
 
   store(
     setCookie: string | readonly string[] | undefined,
     requestUrl: URL,
     now = Date.now(),
   ): void {
+    if (!this.#accepts(requestUrl)) return;
     if (!setCookie) return;
     for (const header of typeof setCookie === "string" ? [setCookie] : setCookie) {
       this.#storeOne(header, requestUrl, now);
@@ -45,6 +48,7 @@ export class RemoteCookieJar {
   }
 
   header(requestUrl: URL, now = Date.now()): string | undefined {
+    if (!this.#accepts(requestUrl)) return undefined;
     this.#removeExpired(now);
     const hostname = requestUrl.hostname.toLowerCase().replace(/^\[|\]$/g, "");
     const pathname = requestUrl.pathname || "/";
@@ -62,6 +66,28 @@ export class RemoteCookieJar {
 
   clear(): void {
     this.#cookies.length = 0;
+  }
+
+  import(cookies: readonly Omit<StoredCookie, "order">[], now = Date.now()): void {
+    for (const cookie of cookies) {
+      if (cookie.expiresAt !== undefined && cookie.expiresAt <= now) continue;
+      const existing = this.#cookies.findIndex(
+        (current) =>
+          current.name === cookie.name &&
+          current.domain === cookie.domain &&
+          current.path === cookie.path,
+      );
+      const next = {
+        ...cookie,
+        order: existing === -1 ? this.#nextOrder++ : this.#cookies[existing]!.order,
+      };
+      if (existing === -1) this.#cookies.push(next);
+      else this.#cookies[existing] = next;
+    }
+  }
+
+  #accepts(requestUrl: URL): boolean {
+    return !this.origin || requestUrl.origin === this.origin.origin;
   }
 
   #storeOne(header: string, requestUrl: URL, now: number): void {

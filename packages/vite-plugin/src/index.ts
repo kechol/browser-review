@@ -2,6 +2,10 @@
 import path from "node:path";
 import { parse } from "@babel/parser";
 
+export function portablePath(value: string): string {
+  return value.replaceAll("\\", "/");
+}
+
 export interface BrowserReviewOptions {
   /**
    * Which files to tag. Defaults to `.jsx` and `.tsx` outside `node_modules`.
@@ -20,7 +24,7 @@ const ATTR = "data-review-src";
 const DEFAULT_EXTENSIONS = new Set([".jsx", ".tsx"]);
 
 function defaultInclude(id: string): boolean {
-  if (id.includes("/node_modules/")) return false;
+  if (portablePath(id).includes("/node_modules/")) return false;
   const clean = id.split("?")[0] ?? id;
   return DEFAULT_EXTENSIONS.has(path.extname(clean));
 }
@@ -123,7 +127,7 @@ export default function browserReview(options: BrowserReviewOptions = {}): ViteP
     transform(code, id) {
       if (!include(id)) return null;
       const clean = id.split("?")[0] ?? id;
-      const relPath = path.relative(root, clean) || path.basename(clean);
+      const relPath = portablePath(path.relative(root, clean) || path.basename(clean));
       const tagged = tagSource(code, relPath);
       if (tagged === code) return null;
       // Line numbers are preserved; inserted attributes shift columns.

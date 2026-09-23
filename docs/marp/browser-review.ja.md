@@ -475,14 +475,14 @@ Claude Code のプラグインです。MCP 対応のエージェントや `curl`
 <div class="mp mp-hl"></div><div class="mp mp-label">div.card</div>
 <div class="mp mp-pin mp-pin-resolved">1</div><div class="mp mp-pin mp-pin-pending">2</div>
 <div class="mp mp-composer"><div class="mc-input">カード下の余白をもう少し広げたい</div><div class="mc-row"><span class="mc-hint">⌘/Ctrl + Enter to send</span><span class="mc-btn">Cancel</span><span class="mc-btn mc-send">Send</span></div></div>
-<div class="mp mp-toolbar"><span class="tb-dot"></span><span class="tb-btn tb-on">Comment</span><span class="tb-btn">Comments 2</span><span class="tb-btn">Status</span></div>
+<div class="mp mp-toolbar"><span class="tb-dot" title="Status"></span><span class="tb-btn tb-on">Comment</span><span class="tb-btn">Comments 2</span></div>
 </div>
 </div>
 <ol class="ui-points">
 <li><strong>Comment</strong> を押して要素をクリック</li>
 <li>直したいことを書いて <strong>Send</strong></li>
 <li>ピンの色で進み具合がわかる<br><span class="swatch sw-pending"></span>待機中<span class="swatch sw-ack"></span>対応中<span class="swatch sw-resolved"></span>修正済み</li>
-<li>キー操作にも対応<br><code>c</code> 選択、<code>l</code> 一覧、<code>s</code> ステータス</li>
+<li>接続ドットか <code>s</code> でステータス<br><code>c</code> 選択、<code>l</code> 一覧</li>
 </ol>
 </div>
 
@@ -636,7 +636,7 @@ CLI だけ使うなら次のどちらか
 | **HTTP**        | `GET /pending` / `GET /feed`（SSE）/ `POST /resolve` / `/ask` / `/dismiss` |
 | **Vite**        | `npm install --save-dev @browser-review/vite-plugin`                       |
 
-**前提**：Node.js 24 以上、macOS または Linux（Windows は非対応）。
+**前提**：Node.js 24 以上。macOS / Linux をサポートし、Windows CLI は experimental / best-effort（実機未検証）です。
 
 <p class="note">browser-review は Anthropic とは無関係の独立したサードパーティ製ツールです。
 「Claude」「Claude Code」は Anthropic PBC の商標で、対応先を示すためだけに使っています。</p>
