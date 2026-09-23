@@ -9,7 +9,7 @@ allowed-tools: Bash(npx browser-review:*), Bash(browser-review:*)
 Run:
 
 ```sh
-npx -y browser-review@^0.3.0 close --session latest
+npx -y browser-review@^0.4.0 close --session latest
 ```
 
 To close a specific one instead, pass its id: `--session <sessionId>`. Use
