@@ -7,7 +7,8 @@ setup, the checks that must pass, and how changes get released.
 
 - Node.js 24 or newer
 - pnpm 12.5.1 (pinned in `packageManager`)
-- macOS or Linux (Windows is not supported — see the README)
+- macOS or Linux for the supported development environment. Windows has a
+  limited best-effort smoke job; see the README for its experimental scope.
 
 ## Getting set up
 
@@ -112,7 +113,7 @@ Pull requests that break one of these will be asked to change:
   `pnpm run check:no-egress` fails the build if network primitives escape the
   dedicated proxy/upstream modules or a fixed non-loopback target appears.
 - Nothing is written inside the user's repository. Session state lives under
-  `$XDG_STATE_HOME/browser-review/`.
+  `~/.browser-review/` by default or a non-empty `$XDG_STATE_HOME/browser-review/`.
 - The overlay never reads form values, cookies, or browser storage.
 
 [dco]: https://developercertificate.org/

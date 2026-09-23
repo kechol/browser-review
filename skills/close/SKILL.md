@@ -16,7 +16,8 @@ To close a specific one instead, pass its id: `--session <sessionId>`. Use
 `/browser-review:status` if you need to see which sessions exist.
 
 Closing stops the server and marks the session file closed. The annotations
-stay on disk under `$XDG_STATE_HOME/browser-review/sessions/`, where a
+stay under `~/.browser-review/sessions/` by default, or
+`$XDG_STATE_HOME/browser-review/sessions/` when that variable is non-empty. A
 housekeeping sweep removes them once they are a week old.
 
 Afterwards:

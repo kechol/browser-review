@@ -28,7 +28,7 @@ export function isProcessAlive(pid: number): boolean {
   }
 }
 
-async function acquireLock(file: string): Promise<() => Promise<void>> {
+export async function acquireLock(file: string): Promise<() => Promise<void>> {
   const lock = `${file}.lock`;
   const deadline = Date.now() + LOCK_TIMEOUT_MS;
   for (;;) {
@@ -62,10 +62,29 @@ async function acquireLock(file: string): Promise<() => Promise<void>> {
  * target, so a reader either sees the previous file or the new one and never a
  * half-written mixture.
  */
-async function writeAtomic(file: string, data: string): Promise<void> {
+export async function writeAtomic(file: string, data: string): Promise<void> {
   const tmp = `${file}.${process.pid}.tmp`;
-  await fs.writeFile(tmp, data, { mode: 0o600 });
-  await fs.rename(tmp, file);
+  try {
+    await fs.writeFile(tmp, data, { mode: 0o600 });
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await fs.rename(tmp, file);
+        break;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (
+          process.platform !== "win32" ||
+          attempt >= 3 ||
+          (code !== "EACCES" && code !== "EPERM" && code !== "EBUSY")
+        ) {
+          throw error;
+        }
+        await delay(15 * (attempt + 1));
+      }
+    }
+  } finally {
+    await fs.rm(tmp, { force: true }).catch(() => undefined);
+  }
 }
 
 export async function readSessionFile(id: string): Promise<SessionFile | null> {

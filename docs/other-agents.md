@@ -145,6 +145,8 @@ npx browser-review close --session latest
 across projects; `close --session latest` closes the newest active session
 globally. Prefer an explicit ID when multiple projects are open.
 
-Session files live in `$XDG_STATE_HOME/browser-review/sessions/`, or
-`~/.local/state/browser-review/sessions/` when that is unset. They are ordinary
+Session files live in `~/.browser-review/sessions/`, or
+`$XDG_STATE_HOME/browser-review/sessions/` when that variable is non-empty. They are ordinary
 JSON, they are the source of truth, and a closed session is swept a week later.
+The older `~/.local/state/browser-review` fallback is not searched, migrated, or
+deleted automatically.

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Overlay reliability fixture</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 3000px;
+        font:
+          16px/1.5 system-ui,
+          sans-serif;
+      }
+      main {
+        width: 720px;
+        margin: 40px auto;
+      }
+      section {
+        margin: 30px 0;
+        padding: 20px;
+        border: 1px solid #bbb;
+      }
+      button {
+        display: block;
+        margin: 12px;
+        padding: 10px 18px;
+      }
+      #move-destination {
+        margin-top: 240px;
+        min-height: 80px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section id="unstable-list">
+        <button>First action</button>
+        <button class="unstable-target" data-review-src="src/list.tsx:20:4">Target action</button>
+      </section>
+      <section id="stable-area">
+        <button id="stable-target" data-review-src="src/stable.tsx:8:2">Stable action</button>
+      </section>
+      <section id="ambiguous-area">
+        <button class="ambiguous-target" data-review-src="src/repeated.tsx:12:3">
+          Repeated action
+        </button>
+        <button class="line-collision" data-review-src="src/repeated.tsx:120:3">
+          Repeated action
+        </button>
+      </section>
+      <section id="private-area">
+        <input value="fixture-private-input" />
+        <textarea>fixture-private-textarea</textarea>
+        <div contenteditable="true">fixture-private-editor</div>
+      </section>
+      <section id="move-destination">Move destination</section>
+      <div id="large-dom"></div>
+    </main>
+  </body>
+</html>

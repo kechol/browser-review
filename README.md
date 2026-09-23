@@ -26,14 +26,23 @@ A review server starts on `127.0.0.1` and hands you a URL. Open it: your page,
 exactly as it was, with a small toolbar in the corner. Hit **Comment**, click
 anything, type what should change.
 
-Keyboard shortcuts: **c** toggles element selection, **l** toggles the comment
-list, and **s** toggles status (connection, mode, version, and MCP URL). `Cmd + \` hides or shows the entire review UI, preserving open panels and
+Click the connection indicator, or press **s**, to toggle status (connection,
+mode, version, and MCP URL). Other keyboard shortcuts are **c** for element
+selection and **l** for the comment list. `Cmd + \` hides or shows the entire review UI, preserving open panels and
 comment drafts. While hidden, review shortcuts and element picking are paused.
 The c/l/s shortcuts are inactive while typing in an input or editor. **Escape** closes
 the panel or cancels element selection. The comment list preserves line breaks
-and displays full comments, with scrolling for longer text. In Status, use
+and displays full comments, with scrolling for longer text. In the status panel, use
 **Copy instructions for Claude Code** to copy the MCP URL together with a
 ready-to-paste review prompt.
+
+Pins follow an element only while its saved tag and available text, ARIA, data,
+or source hints still identify one unambiguous match. If the element disappears,
+becomes ambiguous, or belongs to another path, the comment remains readable in
+the list and card as an unconfirmed position instead of being pinned to a likely
+wrong element. DOM and layout changes are coalesced into animation-frame updates.
+After a WebSocket reconnect, the list, pins, and open card resynchronize while an
+unsent reply, its focus, and selection stay in the current tab.
 
 ```
 /browser-review:resolve
@@ -130,11 +139,33 @@ and trust, opt in for that invocation:
 npx browser-review open https://staging.example.test/admin --allow-remote --json
 ```
 
+To reuse an exact origin without repeating `--allow-remote`, register it
+explicitly. Trust applies only to later session startups; removal does not
+disconnect an already running session.
+
+```sh
+npx browser-review trust add https://staging.example.test
+npx browser-review trust list
+npx browser-review trust remove https://staging.example.test
+```
+
+Only exact HTTPS origins are accepted—no paths, credentials, or wildcards.
+Registration does not bypass DNS pinning, unsafe-address rejection, or TLS
+verification, and stores no credentials.
+
 The review server still listens only on `127.0.0.1`. A remote target must be one
 HTTPS origin with no URL credentials. Its DNS answers are resolved once at
 startup, rejected if they are loopback, unspecified, link-local, or multicast,
 then pinned for the session. TLS certificate and hostname verification remain
 enabled for HTTPS and WSS.
+
+Local HTTPS is supported too. A development or staging CA can be scoped to one
+session with `--ca-file`; without it, Node's standard trust roots are used.
+There is deliberately no insecure-TLS option.
+
+```sh
+npx browser-review open https://localhost:5173 --ca-file ./test-ca.pem --json
+```
 
 Remote mode does not forward browser cookies, `Authorization`, a token-bearing
 `Referer`, or client-supplied forwarding headers. Instead, it keeps upstream
@@ -143,6 +174,18 @@ challenge, site-data, and reporting headers from browser responses. If staging
 uses Basic or Bearer authentication, provide exactly one credential through the
 `BROWSER_REVIEW_REMOTE_AUTHORIZATION` environment variable; it is never written
 to the session file or command line. Prefer a read-only staging account.
+
+For an existing browser-independent authenticated session, pass a Netscape
+cookie jar. The file is read once by the detached session process, is never
+copied into state or printed, and is limited to 1 MiB and 1,000 records.
+Cookies outside the selected scheme, host, port, domain, path, or lifetime are
+not sent. `Set-Cookie` updates and deletions remain inside that session's
+in-memory jar for HTTP and WebSocket requests.
+
+```sh
+npx browser-review open https://staging.example.test/admin \
+  --cookie-file ./staging-cookies.txt --json
+```
 
 This is for a trusted, self-managed staging origin, not arbitrary third-party
 pages. The page and its scripts can observe the tokenized review path and reach
@@ -187,9 +230,11 @@ See [`examples/vite-react`](examples/vite-react).
 ## Requirements
 
 - Node.js 24 or newer
-- macOS or Linux. **Windows is not supported**: the server, the state directory
-  layout, and the browser-opening helper are all written for POSIX. A patch is
-  welcome; the path handling is the bulk of it.
+- macOS or Linux. Windows CLI support is experimental and best-effort: build,
+  path-boundary, state-store, and open/status/close smoke coverage runs in CI,
+  but native Windows hardware has not been verified for this change. Open the
+  returned URL manually. Claude Code hook expansion and every filesystem/ACL or
+  process environment are not claimed to work.
 - Claude Code recent enough to support plugin marketplaces, plugin MCP servers,
   and `hookSpecificOutput.additionalContext` on `UserPromptSubmit`. If
   `/plugin marketplace add` is unknown to your build, update first.
@@ -205,8 +250,14 @@ See [`examples/vite-react`](examples/vite-react).
 - **Read what you typed into the page.** The overlay sends at most 500
   characters of the clicked element's markup, with `value` attributes stripped,
   and never touches form values, cookies, or browser storage.
-- **Write inside your repository.** Sessions live in
-  `$XDG_STATE_HOME/browser-review/`, so there is nothing to accidentally commit.
+- **Write inside your repository.** Sessions live in `~/.browser-review/` by
+  default, or `$XDG_STATE_HOME/browser-review/` when that variable is non-empty,
+  so there is nothing to accidentally commit.
+
+The previous fallback, `~/.local/state/browser-review/`, is not searched,
+migrated, or deleted automatically. Stop existing sessions before changing
+roots. To keep using it, set `XDG_STATE_HOME="$HOME/.local/state"`; otherwise a
+manual copy is optional after every related process has stopped.
 
 ### One thing to keep in mind
 

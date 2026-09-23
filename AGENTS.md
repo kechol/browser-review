@@ -56,8 +56,9 @@ otherwise:
 - Bind the review server to `127.0.0.1`. Preserve token authentication, Origin
   checks and loopback/upstream restrictions. Do not add telemetry or arbitrary
   outbound requests.
-- Keep runtime session state under `$XDG_STATE_HOME/browser-review/` (with the
-  documented home-directory fallback), outside the reviewed project.
+- Keep runtime session state under `~/.browser-review/` by default or a non-empty
+  `$XDG_STATE_HOME/browser-review/`, outside the reviewed project. Do not add an
+  automatic reader or migration for the former fallback.
 - Automatic hook and stdio MCP session selection must match the current project's
   canonical directory exactly. Invalid metadata must not broaden selection.
   Preserve explicit session-ID and tokenized HTTP handoffs across projects.
@@ -70,7 +71,8 @@ otherwise:
 
 Use Node.js 24 or newer and the pnpm version pinned in root `package.json`.
 Use pnpm and `pnpm-lock.yaml`; do not introduce npm/yarn lockfiles. The project
-uses TypeScript 7, oxlint and oxfmt. Supported platforms are macOS and Linux.
+uses TypeScript 7, oxlint and oxfmt. macOS and Linux are supported; Windows CLI
+behavior is experimental and best-effort.
 
 ```sh
 pnpm install --frozen-lockfile

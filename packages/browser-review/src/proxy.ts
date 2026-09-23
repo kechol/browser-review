@@ -65,6 +65,7 @@ const REMOTE_RESPONSE_HEADERS = new Set([
 ]);
 
 const LOOPBACK_NAMES = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+const defaultPort = (protocol: string) => (protocol === "https:" ? "443" : "80");
 
 function isReviewOrigin(value: string | string[] | undefined, selfOrigin: string): boolean {
   if (typeof value !== "string") return false;
@@ -95,7 +96,10 @@ export function filterRequestHeaders(
   for (const [key, value] of Object.entries(headers)) {
     if (value === undefined) continue;
     if (HOP_BY_HOP.has(key)) continue;
-    if (opts.remote && (REMOTE_REQUEST_HEADERS.has(key) || key.startsWith("x-forwarded-"))) {
+    if (
+      (opts.remote || opts.cookieJar) &&
+      (REMOTE_REQUEST_HEADERS.has(key) || key.startsWith("x-forwarded-"))
+    ) {
       continue;
     }
     if (key === "cookie" && typeof value === "string") {
@@ -109,13 +113,15 @@ export function filterRequestHeaders(
     } else out[key] = value;
   }
   out["host"] = opts.upstream.host;
-  if (opts.remote) {
+  if (opts.remote || opts.cookieJar) {
     const requestUrl = upstreamUrl(opts.upstream, upstreamPath);
     const cookie = opts.cookieJar?.header(requestUrl);
     if (cookie) out["cookie"] = cookie;
     if (opts.authorization) out["authorization"] = opts.authorization;
-    if (isReviewOrigin(headers.origin, opts.selfOrigin)) out["origin"] = opts.upstream.origin;
-    else delete out["origin"];
+    if (opts.remote) {
+      if (isReviewOrigin(headers.origin, opts.selfOrigin)) out["origin"] = opts.upstream.origin;
+      else delete out["origin"];
+    }
   }
   // Ask for plain bytes: an HTML body has to be readable to have the overlay
   // spliced into it, and re-compressing it would buy nothing over loopback.
@@ -145,8 +151,10 @@ export function rewriteLocation(location: string, opts: ProxyOptions): string {
     }
     return url.href;
   }
-  const samePort = (url.port || "80") === (opts.upstream.port || "80");
-  if (url.protocol === "http:" && samePort && LOOPBACK_NAMES.has(url.hostname)) {
+  const samePort =
+    (url.port || defaultPort(url.protocol)) ===
+    (opts.upstream.port || defaultPort(opts.upstream.protocol));
+  if (url.protocol === opts.upstream.protocol && samePort && LOOPBACK_NAMES.has(url.hostname)) {
     return opts.selfOrigin + opts.basePath + url.pathname + url.search + url.hash;
   }
   return location;
@@ -158,16 +166,17 @@ function requestOptions(
   opts: ProxyOptions,
 ): RequestOptions {
   const hostname = opts.upstream.hostname.replace(/^\[|\]$/g, "");
+  const secure = opts.upstream.protocol === "https:";
   return {
     protocol: opts.upstream.protocol,
     hostname,
-    port: opts.upstream.port || (opts.remote ? 443 : 80),
+    port: opts.upstream.port || (secure ? 443 : 80),
     method: req.method,
     path: upstreamPath,
     headers: filterRequestHeaders(req.headers, upstreamPath, opts),
     ...(opts.lookup ? { lookup: opts.lookup, autoSelectFamily: true } : {}),
-    ...(opts.remote && isIP(hostname) === 0 ? { servername: hostname } : {}),
-    ...(opts.tlsCa ? { ca: opts.tlsCa } : {}),
+    ...(secure && isIP(hostname) === 0 ? { servername: hostname } : {}),
+    ...(secure && opts.tlsCa ? { ca: opts.tlsCa } : {}),
   };
 }
 
@@ -176,11 +185,11 @@ function responseHeaders(
   requestUrl: URL,
   opts: ProxyOptions,
 ): Record<string, string | string[]> {
-  if (opts.remote) opts.cookieJar?.store(headers["set-cookie"], requestUrl);
+  opts.cookieJar?.store(headers["set-cookie"], requestUrl);
   const filtered: Record<string, string | string[]> = {};
   for (const [key, value] of Object.entries(headers)) {
     if (value === undefined || HOP_BY_HOP.has(key)) continue;
-    if (opts.remote && REMOTE_RESPONSE_HEADERS.has(key)) continue;
+    if ((opts.remote || opts.cookieJar) && REMOTE_RESPONSE_HEADERS.has(key)) continue;
     filtered[key] = value;
   }
   if (opts.remote) filtered["referrer-policy"] = "no-referrer";
@@ -198,7 +207,7 @@ export function proxyRequest(
   opts: ProxyOptions,
 ): void {
   const requestUrl = upstreamUrl(opts.upstream, upstreamPath);
-  const transport = opts.remote ? https : http;
+  const transport = opts.upstream.protocol === "https:" ? https : http;
   const upstreamReq = transport.request(requestOptions(req, upstreamPath, opts), (upstreamRes) => {
     const headers = responseHeaders(upstreamRes.headers, requestUrl, opts);
 
@@ -305,7 +314,7 @@ export function proxyUpgrade(
   opts: ProxyOptions,
 ): void {
   const requestUrl = upstreamUrl(opts.upstream, upstreamPath);
-  const transport = opts.remote ? https : http;
+  const transport = opts.upstream.protocol === "https:" ? https : http;
   const upstreamReq = transport.request({
     ...requestOptions(req, upstreamPath, opts),
     headers: {
@@ -316,12 +325,13 @@ export function proxyUpgrade(
   });
 
   upstreamReq.on("upgrade", (upstreamRes, upstreamSocket: net.Socket, upstreamHead: Buffer) => {
-    if (opts.remote) opts.cookieJar?.store(upstreamRes.headers["set-cookie"], requestUrl);
+    opts.cookieJar?.store(upstreamRes.headers["set-cookie"], requestUrl);
     const statusLine = `HTTP/1.1 ${upstreamRes.statusCode} ${upstreamRes.statusMessage}\r\n`;
     const headerLines = Object.entries(upstreamRes.headers)
       .filter(
         ([key, value]) =>
-          value !== undefined && (!opts.remote || !REMOTE_RESPONSE_HEADERS.has(key)),
+          value !== undefined &&
+          (!(opts.remote || opts.cookieJar) || !REMOTE_RESPONSE_HEADERS.has(key)),
       )
       .flatMap(([key, value]) =>
         Array.isArray(value) ? value.map((v) => `${key}: ${v}`) : [`${key}: ${value}`],

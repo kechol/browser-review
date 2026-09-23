@@ -123,8 +123,8 @@ export function validateProxyTarget(raw: string, allowRemote = false): Validated
 
   const local = LOOPBACK_HOSTS.has(url.hostname);
   if (local) {
-    if (url.protocol !== "http:") {
-      throw new UpstreamError("localhost proxy URLs must use http://");
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      throw new UpstreamError("localhost proxy URLs must use http:// or https://");
     }
     return { url, remote: false };
   }

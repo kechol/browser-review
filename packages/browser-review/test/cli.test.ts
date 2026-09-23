@@ -55,16 +55,17 @@ describe("parseTarget", () => {
     });
   });
 
-  it("still rejects remote HTTP, URL credentials and local HTTPS after opt-in", () => {
+  it("accepts local HTTPS but still rejects remote HTTP and URL credentials", () => {
     expect(() => parseTarget("http://staging.example.test", dir, { allowRemote: true })).toThrow(
       /must use https/,
     );
     expect(() =>
       parseTarget("https://user:secret@staging.example.test", dir, { allowRemote: true }),
     ).toThrow(/username or password/);
-    expect(() => parseTarget("https://localhost:5173", dir, { allowRemote: true })).toThrow(
-      /localhost proxy URLs must use http/,
-    );
+    expect(parseTarget("https://localhost:5173", dir)).toEqual({
+      mode: "proxy",
+      target: "https://localhost:5173",
+    });
   });
 
   it("refuses a file that is not HTML", () => {

@@ -30,7 +30,9 @@ Any process running as the same user can reach `127.0.0.1:<port>`.
 random bytes (`crypto.randomBytes(24).toString("base64url")`). A request whose
 token does not match is answered with `404`, not `403`, so the server does not
 confirm that a session exists. Tokens are never written to logs, and the session
-file lives under `$XDG_STATE_HOME/browser-review/` with `0600` permissions.
+file lives under `~/.browser-review/` (or a non-empty
+`$XDG_STATE_HOME/browser-review/`) with `0600` permissions on POSIX systems.
+Windows mode bits are not an ACL guarantee.
 
 **Residual risk.** A local process that can read the user's home directory can
 read the session file and therefore the token. We consider a local attacker with
@@ -96,13 +98,17 @@ its DNS answers after startup. An attacker could otherwise use remote mode as an
 SSRF primitive or rebind a validated hostname to a local service.
 
 **Mitigations.** Remote proxying is denied unless that invocation includes
-`--allow-remote`. Non-loopback targets must use HTTPS, URL userinfo is rejected,
+`--allow-remote` or the exact HTTPS origin was explicitly added with
+`browser-review trust add`. The registry contains canonical origins only and
+does not bypass the checks below. Non-loopback targets must use HTTPS, URL userinfo is rejected,
 and DNS is resolved once before the review server listens. The complete answer
 set is rejected if any address is loopback (including IPv4-mapped IPv6),
 unspecified, link-local, or multicast. Validated addresses are pinned for the
 session; later requests do not expand the set. `Host`, TLS SNI, and certificate
 verification continue to use the original upstream hostname. TLS verification
-cannot be disabled. HTTP and WebSocket requests use the same policy.
+cannot be disabled. A `--ca-file` PEM bundle replaces the trust roots for that
+one HTTPS/WSS session only; without it, Node's standard roots apply. HTTP and
+WebSocket requests use the same policy.
 
 The source check permits HTTPS, DNS, and socket primitives only in the dedicated
 upstream/proxy implementation and still rejects fixed non-loopback URL targets.
@@ -128,6 +134,13 @@ WebSocket handshakes. An optional Basic or Bearer value comes only from
 `BROWSER_REVIEW_REMOTE_AUTHORIZATION`; it is not placed in CLI arguments, logs,
 session JSON, MCP output, or errors. The jar and credential die with the session.
 
+An explicit `--cookie-file` is the only additional Cookie input. It accepts a
+bounded Netscape jar, including `#HttpOnly_`, for an HTTPS target. The file is
+read once and is not copied or modified. Imported cookies are limited to the
+session's exact scheme, host, and port before normal Domain, Path, Secure,
+expiry, update, and deletion rules apply. Browser cookies are not mixed into a
+cookie-file session. Cookie values and CA contents are not persisted or echoed.
+
 **Residual risk.** The proxy cannot distinguish a login POST from a business-data
 mutation. Use a read-only staging account and synthetic fixtures for tests. CSP
 is removed to inject the overlay, absolute URLs are not rewritten, and the
@@ -140,3 +153,5 @@ review control channel. Remote mode is not a sandbox for third-party content.
 - Plain-HTTP remote origins or a switch that disables TLS verification.
 - Treating arbitrary third-party pages as trusted remote review targets.
 - Multi-user or multi-machine deployments.
+- Treating Windows best-effort support or POSIX mode bits as a Windows ACL
+  guarantee. Native Windows hardware was not verified for this change.

@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Annotation, Session, SessionFile } from "@browser-review/shared";
 import { UNTRUSTED_INPUT_NOTICE } from "@browser-review/shared";
 import { summarizeHint } from "./annotations.js";
+import { resolveScopedPath } from "./path-util.js";
 
 /** Render a comment so that it can never be mistaken for part of the prompt. */
 export function quoteComment(comment: string): string {
@@ -42,11 +43,12 @@ export function editableScope(session: Session): string {
 }
 
 export function isInScope(session: Session, file: string): boolean {
-  const abs = path.isAbsolute(file) ? file : path.resolve(session.projectDir, file);
-  if (session.mode === "html-file") return path.resolve(abs) === path.resolve(session.target);
-  const root = path.resolve(session.projectDir);
-  const resolved = path.resolve(abs);
-  return resolved === root || resolved.startsWith(root + path.sep);
+  if (/^[A-Za-z]:[^\\/]/.test(file)) return false;
+  const resolved = path.isAbsolute(file)
+    ? path.resolve(file)
+    : path.resolve(session.projectDir, file);
+  if (session.mode === "html-file") return resolved === path.resolve(session.target);
+  return resolveScopedPath(session.projectDir, file) !== null;
 }
 
 /** One line per annotation, for `review_list` and the hook. */

@@ -19,7 +19,8 @@
    └──────────┬───────────────────────────────────┘
               │ session file (JSON, atomic rename + lock)
               ▼
-   $XDG_STATE_HOME/browser-review/sessions/<id>.json
+   ~/.browser-review/sessions/<id>.json
+   (or $XDG_STATE_HOME/browser-review/sessions/<id>.json)
               ▲
               │ same file
    ┌──────────┴───────────┐        ┌──────────────────────┐
@@ -42,9 +43,11 @@ polls it twice a second, and watches its directory, so a change made by the
 stdio process — an agent resolving an annotation — reaches the browser without
 either process knowing the other exists.
 
-The directory is a deliberate choice too: `$XDG_STATE_HOME`, never the
-repository. Review comments and session tokens should not be one `git add .`
-away from a public commit.
+The directory is a deliberate choice too: `~/.browser-review` by default, or a
+non-empty `$XDG_STATE_HOME/browser-review`, never the repository. Review
+comments and session tokens should not be one `git add .` away from a public
+commit. The former `~/.local/state/browser-review` fallback is not searched or
+migrated automatically.
 
 ## Why `review_wait` returns within 90 seconds
 

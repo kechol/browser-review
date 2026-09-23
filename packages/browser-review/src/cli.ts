@@ -20,6 +20,12 @@ import {
 } from "./store.js";
 import { ulid } from "./ulid.js";
 import { UpstreamError, validateProxyTarget } from "./upstream.js";
+import {
+  isTrustedTarget,
+  readTrustedOrigins,
+  TrustedOriginsError,
+  updateTrustedOrigin,
+} from "./trust.js";
 
 const SELF = fileURLToPath(import.meta.url);
 const STARTUP_TIMEOUT_MS = 15_000;
@@ -31,12 +37,17 @@ Usage:
   browser-review status [--session <id>] [--json]
   browser-review close [--session <id|latest>]
   browser-review mcp [--session <id|latest>]
+  browser-review trust add <https-origin>
+  browser-review trust list
+  browser-review trust remove <https-origin>
 
 Options:
   --port <n>            Port to listen on. 0 (the default) picks a free one.
   --project-dir <dir>   Repository the agent may edit. Defaults to
                         $CLAUDE_PROJECT_DIR, then the working directory.
   --allow-remote        Explicitly allow one trusted HTTPS staging origin.
+  --cookie-file <path>  Import a Netscape cookie jar for one HTTPS session.
+  --ca-file <path>      Trust this PEM CA bundle for one HTTPS session.
   --json                Print one line of JSON instead of prose.
   --session <id>        Which session to act on. "latest" means the newest
                         running one.
@@ -115,6 +126,8 @@ async function cmdOpen(argv: string[]): Promise<void> {
       port: { type: "string" },
       "project-dir": { type: "string" },
       "allow-remote": { type: "boolean", default: false },
+      "cookie-file": { type: "string" },
+      "ca-file": { type: "string" },
       json: { type: "boolean", default: false },
     },
   });
@@ -122,14 +135,36 @@ async function cmdOpen(argv: string[]): Promise<void> {
   if (!raw) fail("open needs a target: an .html file or a proxy URL.");
 
   const cwd = process.cwd();
+  let allowRemote = values["allow-remote"];
+  if (!allowRemote && /^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
+    let local = false;
+    try {
+      local = !validateProxyTarget(raw).remote;
+    } catch {
+      // A remote target may still be present in the explicit trust file.
+    }
+    if (!local) {
+      try {
+        allowRemote = await isTrustedTarget(raw);
+      } catch (error) {
+        if (error instanceof TrustedOriginsError) fail(error.message);
+        throw error;
+      }
+    }
+  }
   let parsed: ParsedTarget;
   try {
-    parsed = parseTarget(raw, cwd, { allowRemote: values["allow-remote"] });
+    parsed = parseTarget(raw, cwd, { allowRemote });
   } catch (err) {
     if (err instanceof TargetError) fail(err.message);
     throw err;
   }
   const { mode, target, entryPath } = parsed;
+  const secureProxy = mode === "proxy" && new URL(target).protocol === "https:";
+  if (values["cookie-file"] && !secureProxy) fail("--cookie-file requires an HTTPS proxy target.");
+  if (values["ca-file"] && !secureProxy) fail("--ca-file requires an HTTPS proxy target.");
+  const cookieFile = values["cookie-file"] ? path.resolve(cwd, values["cookie-file"]) : undefined;
+  const caFile = values["ca-file"] ? path.resolve(cwd, values["ca-file"]) : undefined;
   const projectDir = projectDirFrom(values["project-dir"], cwd);
   const port = Number(values["port"] ?? 0);
   if (!Number.isInteger(port) || port < 0 || port > 65_535) fail(`invalid port: ${values["port"]}`);
@@ -160,10 +195,16 @@ async function cmdOpen(argv: string[]): Promise<void> {
       "--port",
       String(port),
       ...(entryPath ? ["--entry-path", entryPath] : []),
-      ...(values["allow-remote"] ? ["--allow-remote"] : []),
+      ...(allowRemote ? ["--allow-remote"] : []),
+      ...(cookieFile ? ["--cookie-file", cookieFile] : []),
+      ...(caFile ? ["--ca-file", caFile] : []),
     ],
-    { detached: true, stdio: ["ignore", logFd, logFd] },
+    { detached: true, stdio: ["ignore", logFd, logFd], windowsHide: true },
   );
+  let childExit: { code: number | null; signal: NodeJS.Signals | null } | null = null;
+  child.once("exit", (code, signal) => {
+    childExit = { code, signal };
+  });
   child.unref();
 
   const deadline = Date.now() + STARTUP_TIMEOUT_MS;
@@ -201,6 +242,13 @@ async function cmdOpen(argv: string[]): Promise<void> {
       }
       return;
     }
+    if (childExit) {
+      const tail = await fsp.readFile(log, "utf8").catch(() => "");
+      fail(
+        `the review server exited before startup (${JSON.stringify(childExit)}).\n` +
+          (tail ? `Server log:\n${tail}` : `See ${log}`),
+      );
+    }
     if (Date.now() > deadline) {
       const tail = await fsp.readFile(log, "utf8").catch(() => "");
       fail(
@@ -224,6 +272,8 @@ async function cmdServe(argv: string[]): Promise<void> {
       port: { type: "string" },
       "entry-path": { type: "string" },
       "allow-remote": { type: "boolean", default: false },
+      "cookie-file": { type: "string" },
+      "ca-file": { type: "string" },
     },
   });
   const { startReviewServer } = await import("./server.js");
@@ -236,6 +286,8 @@ async function cmdServe(argv: string[]): Promise<void> {
     projectDir: String(values["project-dir"]),
     port: Number(values["port"] ?? 0),
     allowRemote: values["allow-remote"],
+    ...(values["cookie-file"] ? { cookieFile: values["cookie-file"] } : {}),
+    ...(values["ca-file"] ? { caFile: values["ca-file"] } : {}),
     ...(entryPath ? { entryPath } : {}),
   });
   const shutdown = () => {
@@ -355,6 +407,30 @@ async function cmdMcp(argv: string[]): Promise<void> {
   process.on("SIGINT", shutdown);
 }
 
+async function cmdTrust(argv: string[]): Promise<void> {
+  const [action, origin, ...extra] = argv;
+  if (extra.length > 0) fail("trust accepts only an action and one HTTPS origin.");
+  try {
+    if (action === "list") {
+      if (origin) fail("trust list does not accept an origin.");
+      const origins = await readTrustedOrigins();
+      process.stdout.write(origins.length ? `${origins.join("\n")}\n` : "No trusted origins.\n");
+      return;
+    }
+    if ((action === "add" || action === "remove") && origin) {
+      const result = await updateTrustedOrigin(action, origin);
+      process.stdout.write(
+        `${action === "add" ? "Trusted" : "Removed"} ${result.origin}${result.changed ? "" : " (unchanged)"}.\n`,
+      );
+      return;
+    }
+  } catch (error) {
+    if (error instanceof TrustedOriginsError) fail(error.message);
+    throw error;
+  }
+  fail("trust needs: add <https-origin>, list, or remove <https-origin>.");
+}
+
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
   switch (command) {
@@ -368,6 +444,8 @@ async function main(): Promise<void> {
       return cmdClose(rest);
     case "mcp":
       return cmdMcp(rest);
+    case "trust":
+      return cmdTrust(rest);
     case "-h":
     case "--help":
     case "help":

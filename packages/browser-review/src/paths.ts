@@ -10,9 +10,13 @@ import path from "node:path";
  * public commit.
  */
 export function stateDir(): string {
-  const xdg = process.env["XDG_STATE_HOME"];
-  const base = xdg && xdg.trim() !== "" ? xdg : path.join(homedir(), ".local", "state");
-  return path.join(base, "browser-review");
+  return stateDirFrom(process.env["XDG_STATE_HOME"], homedir());
+}
+
+export function stateDirFrom(xdg: string | undefined, home: string): string {
+  return xdg && xdg.trim() !== ""
+    ? path.join(xdg, "browser-review")
+    : path.join(home, ".browser-review");
 }
 
 export function sessionsDir(): string {
@@ -26,4 +30,8 @@ export function sessionPath(id: string): string {
 
 export function logPath(id: string): string {
   return path.join(stateDir(), "logs", `${id}.log`);
+}
+
+export function trustedOriginsPath(): string {
+  return path.join(stateDir(), "trusted-origins.json");
 }

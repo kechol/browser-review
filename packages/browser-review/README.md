@@ -3,7 +3,8 @@
 Review a local HTML page or a localhost development server in your browser, then
 send element-specific comments and source hints to an MCP-compatible coding agent.
 
-Requires Node.js 24 or newer on macOS or Linux.
+Requires Node.js 24 or newer. macOS and Linux are supported; Windows CLI support
+is experimental and best-effort.
 
 ```sh
 npx browser-review open ./page.html --json
@@ -11,6 +12,10 @@ npx browser-review open ./page.html --json
 npx browser-review open http://localhost:5173 --json
 # Or explicitly opt in to a trusted HTTPS staging origin:
 npx browser-review open https://staging.example.test --allow-remote --json
+# Optional, session-scoped authentication and TLS trust:
+npx browser-review trust add https://staging.example.test
+npx browser-review open https://staging.example.test \
+  --cookie-file ./cookies.txt --ca-file ./ca.pem --json
 ```
 
 Open the returned review URL. The returned MCP URL lets an agent connect over
@@ -26,6 +31,9 @@ only, DNS-pinned, and intended solely for a self-managed staging origin you
 trust. Browser credentials are not forwarded; upstream cookies and an optional
 `BROWSER_REVIEW_REMOTE_AUTHORIZATION` Basic/Bearer value are isolated in the
 session process. TLS verification stays enabled.
+
+State lives in `~/.browser-review` by default, or under a non-empty
+`$XDG_STATE_HOME`. Older fallback state is not automatically migrated.
 
 Review comments, page text, URLs, source hints and optional screenshots may enter
 the connected agent's context; form-value filtering is not general-purpose
