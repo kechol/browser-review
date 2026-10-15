@@ -65,7 +65,7 @@ afterAll(async () => {
 });
 
 const { startReviewServer } = await import("../src/server.js");
-const { readSessionFile } = await import("../src/store.js");
+const { readSessionFile, updateSessionFile } = await import("../src/store.js");
 
 function token() {
   return randomBytes(24).toString("base64url");
@@ -503,4 +503,31 @@ it("serves MCP status and a zero-timeout wait through the actual HTTP transport"
     await client.close();
     await running.close();
   }
+});
+
+it("leaves a reopened session alone when the previous server shuts down late", async () => {
+  const { running: previous, id } = await startHtmlSession();
+  // `close` marks the session closed before the old server has finished exiting.
+  await updateSessionFile(id, (file) => {
+    file.session.closedAt = new Date().toISOString();
+  });
+  const reopenedToken = token();
+  const reopened = await startReviewServer({
+    id,
+    token: reopenedToken,
+    mode: "html-file",
+    target: path.join(pageDir, "page.html"),
+    projectDir: pageDir,
+    port: 0,
+    resume: true,
+  });
+  try {
+    await previous.close();
+    const file = await readSessionFile(id);
+    expect(file?.session.token).toBe(reopenedToken);
+    expect(file?.session.closedAt).toBeUndefined();
+  } finally {
+    await reopened.close();
+  }
+  expect((await readSessionFile(id))?.session.closedAt).toBeDefined();
 });

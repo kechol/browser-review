@@ -177,6 +177,8 @@ describe("several targets per project", () => {
     expect(ambiguous.stdout).toContain(b!.sessionId);
 
     expect(inProject("close", "a.html").stdout).toContain(`Closed review session ${a!.sessionId}`);
+    // The server has exited by the time close returns, so nothing rewrites the file later.
+    expect(() => process.kill(a!.pid, 0)).toThrow();
 
     // A comment left behind on the closed session comes back with it.
     const closed = JSON.parse(fs.readFileSync(sessionFile(a!.sessionId), "utf8"));
