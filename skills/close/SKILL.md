@@ -10,11 +10,11 @@ Pick the command from what the user asked to close:
 
 ```sh
 # A specific page or URL (several may be listed):
-npx -y browser-review@^0.3.0 close <file-or-url>
+npx -y browser-review@^0.4.0 close <file-or-url>
 # Every session of this project:
-npx -y browser-review@^0.3.0 close --project
+npx -y browser-review@^0.4.0 close --project
 # Nothing specific:
-npx -y browser-review@^0.3.0 close
+npx -y browser-review@^0.4.0 close
 ```
 
 Run them from the project directory. Without arguments, `close` closes the

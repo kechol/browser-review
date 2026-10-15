@@ -11,7 +11,7 @@
       "source": "./",
       "displayName": "Browser Review",
       "description": "Review a local page, localhost app, or explicitly trusted HTTPS staging origin, then have Claude Code find and fix the code behind your comments.",
-      "version": "0.3.1",
+      "version": "0.4.0",
       "author": {
         "name": "kechol",
         "url": "https://github.com/kechol"
