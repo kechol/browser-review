@@ -27,7 +27,7 @@
     "@changesets/cli": "^3.0.3",
     "@playwright/test": "^1.63.0",
     "@types/node": "^24.13.6",
-    "@types/ws": "^8.18.1",
+    "@types/ws": "^8.18.2",
     "esbuild": "^0.28.2",
     "oxlint": "^1.83.0",
     "typescript": "^7.0.2",
