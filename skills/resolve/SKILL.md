@@ -20,8 +20,9 @@ meant.
 
 Call `review_status`.
 
-- **A session is running** — note its mode and its editing scope, and go to
-  step 2.
+- **Sessions are running** — there may be several, one per page being
+  reviewed. Note each one's mode and editing scope, and go to step 2. Sessions
+  opened later join the loop on their own.
 - **No session** — if this skill was given an argument, open it first with
   `/browser-review:open <argument>`. Otherwise ask the user what to review and
   stop.
@@ -32,7 +33,8 @@ Repeat until the user says to stop:
 
 **Wait.** Call `review_wait`. An empty result is normal — call it again. Say
 nothing between empty waits; silence is the correct output while nobody has
-commented.
+commented. If it reports that every session being watched has closed, stop the
+loop.
 
 **For each annotation that arrives, find the code.** Walk `sourceHints` from
 the highest confidence down and stop at the first one that lands:
@@ -51,7 +53,9 @@ candidates, or none, call `review_ask(id, question)` with a specific question �
 pricing table?" — and then call `review_wait` again. Their answer comes back
 through that call.
 
-**Make the change.** Stay inside the editing scope `review_status` reported:
+**Make the change.** Stay inside the editing scope of the session the
+annotation belongs to — `review_wait` lists each annotation under its session.
+A file another session may edit is still out of scope for this annotation.
 
 - `html-file` mode — the one file named as the target, nothing else.
 - `proxy` mode — files under the project directory, nothing else.

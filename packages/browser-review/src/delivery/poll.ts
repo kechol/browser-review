@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+import fs from "node:fs/promises";
 import chokidar, { type FSWatcher } from "chokidar";
-import type { Annotation } from "@browser-review/shared";
+import type { Session, SessionFile } from "@browser-review/shared";
 import { REVIEW_WAIT_MAX_MS } from "@browser-review/shared";
 import { sessionsDir } from "../paths.js";
 import { sessionFileStamp, takeDeliverable } from "../store.js";
@@ -28,7 +29,11 @@ export class PollDelivery implements Delivery {
         depth: 0,
         awaitWriteFinish: { stabilityThreshold: 20, pollInterval: 10 },
       });
-      this.#watcher.on("all", () => this.#wake());
+      // Only session files matter. Lock files come and go on every
+      // `takeDeliverable`, and waking on them would make a wait wake itself.
+      this.#watcher.on("all", (_event, file) => {
+        if (file.endsWith(".json")) this.#wake();
+      });
       this.#watcher.on("error", () => {
         // Losing the watcher is survivable: the poll below still fires.
       });
@@ -42,29 +47,39 @@ export class PollDelivery implements Delivery {
   }
 
   async waitForPending(
-    sessionId: string,
+    sessions: () => Promise<Session[]>,
     timeoutMs: number,
     signal?: AbortSignal,
-  ): Promise<Annotation[]> {
+  ): Promise<SessionFile[]> {
     if (this.#closed || signal?.aborted) return [];
     const budget = Math.max(0, Math.min(timeoutMs, REVIEW_WAIT_MAX_MS));
     const deadline = Date.now() + budget;
     this.#ensureWatcher();
-    let stamp = await sessionFileStamp(sessionId);
 
     for (;;) {
       if (this.#closed || signal?.aborted) return [];
-      const taken = await takeDeliverable(sessionId);
+      const watched = await sessions();
+      if (watched.length === 0) return [];
+      // Stamped before taking, so a write that lands in between still wakes the sleep.
+      const ids = watched.map((session) => session.id);
+      const stamp = await setStamp(ids);
+      const groups = await Promise.all(
+        watched.map(async (session) => ({
+          session,
+          // A session swept or removed since it was selected has nothing to hand out.
+          annotations: await takeDeliverable(session.id).catch(() => []),
+        })),
+      );
+      const taken = groups.filter((group) => group.annotations.length > 0);
       if (taken.length > 0) return taken;
       if (signal?.aborted || Date.now() >= deadline) return [];
 
-      await this.#sleepUntilChange(sessionId, stamp, deadline, signal);
-      stamp = await sessionFileStamp(sessionId);
+      await this.#sleepUntilChange(ids, stamp, deadline, signal);
     }
   }
 
   async #sleepUntilChange(
-    sessionId: string,
+    ids: string[],
     stamp: string,
     deadline: number,
     signal?: AbortSignal,
@@ -82,7 +97,7 @@ export class PollDelivery implements Delivery {
       };
       const timer = setInterval(() => {
         if (Date.now() >= deadline) return finish();
-        void sessionFileStamp(sessionId).then((now) => {
+        void setStamp(ids).then((now) => {
           if (now !== stamp) finish();
         });
       }, POLL_INTERVAL_MS);
@@ -105,4 +120,17 @@ export class PollDelivery implements Delivery {
     await this.#watcher?.close();
     this.#watcher = null;
   }
+}
+
+/**
+ * Changes when a session file appears or disappears, or when a watched one is
+ * written. Cheap enough for every tick: one directory listing and a stat per
+ * watched session, without reading any file. Lock and temporary files are
+ * left out so that taking annotations does not wake the waiter itself.
+ */
+async function setStamp(ids: string[]): Promise<string> {
+  const entries = await fs.readdir(sessionsDir()).catch(() => [] as string[]);
+  const files = entries.filter((entry) => entry.endsWith(".json")).toSorted();
+  const stamps = await Promise.all(ids.map(async (id) => `${id}=${await sessionFileStamp(id)}`));
+  return `${files.join(",")}|${stamps.join(",")}`;
 }

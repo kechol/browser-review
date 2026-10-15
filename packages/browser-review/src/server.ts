@@ -71,6 +71,8 @@ export interface StartOptions {
   cookieFile?: string;
   /** In-memory credential injection used by embedders and isolated tests. */
   remoteAuthorization?: string;
+  /** Take over an existing, closed session file and keep its annotations. */
+  resume?: boolean;
 }
 
 export interface RunningServer {
@@ -189,6 +191,8 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
     pid: process.pid,
     createdAt: new Date().toISOString(),
     ...(opts.entryPath ? { entryPath: opts.entryPath } : {}),
+    ...(opts.cookieFile ? { cookieFile: true } : {}),
+    ...(opts.caFile ? { caFile: true } : {}),
   };
 
   // Probed once: absent unless Playwright happens to be installed alongside.
@@ -401,9 +405,12 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
       await import("@modelcontextprotocol/sdk/server/streamableHttp.js");
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
     const mcpServer = createMcpServer({
-      resolveSession: sessionContextForId(opts.id),
+      resolveSessions: sessionContextForId(opts.id),
       delivery,
-      ...(screenshot ? { screenshot } : {}),
+      // This endpoint only ever serves its own session.
+      ...(screenshot
+        ? { screenshot: (_session: Session, selector?: string) => screenshot(selector) }
+        : {}),
     });
     res.on("close", () => {
       void transport.close();
@@ -608,7 +615,14 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
     }
     snapshot = next;
   };
-  await writeSessionFile({ session, annotations: [] });
+  if (opts.resume) {
+    await updateSessionFile(opts.id, (current) => {
+      session.createdAt = current.session.createdAt;
+      current.session = session;
+    });
+  } else {
+    await writeSessionFile({ session, annotations: [] });
+  }
   await refreshFromDisk();
 
   // Watch the directory rather than the file: every write replaces the inode.

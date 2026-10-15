@@ -12,6 +12,7 @@ npx browser-review open ./landing.html --json
 
 ```json
 {
+  "state": "started",
   "sessionId": "01J...",
   "token": "…",
   "reviewUrl": "http://127.0.0.1:53211/r/<token>/",
@@ -25,8 +26,14 @@ npx browser-review open ./landing.html --json
 }
 ```
 
+With several targets, `open` prints one such line per target. `state` is
+`started` for a new session, `running` when the project already had a running
+session for that target (for a proxy target, the same origin), and `reopened`
+when a closed session for it was resumed with its annotations.
+
 The token is in the path of every URL. Keep it out of logs and out of places
 other people can read; anything that has it can read and resolve annotations.
+A reopened session gets a new token; the old URLs stay dead.
 
 ## Option A — MCP over Streamable HTTP
 
@@ -64,19 +71,27 @@ own — act on all of it before calling again.
 ## MCP over stdio
 
 ```sh
-npx browser-review mcp --session latest
+npx browser-review mcp --session project
 ```
 
 Automatic selection is limited to the current project: `CLAUDE_PROJECT_DIR`
-when set, otherwise the working directory where the MCP process starts. It
-selects the newest running session in that exact directory, resolving symlinks.
-A parent, child or sibling project is a separate scope. Invalid or missing
-session project metadata is ignored; no matching session means no active
-session is returned.
+when set, otherwise the working directory where the MCP process starts.
+`project` selects every running session in that exact directory, resolving
+symlinks, and is re-evaluated on every call, so sessions opened or closed later
+are followed. `latest` selects only the newest one. A parent, child or sibling
+project is a separate scope. Invalid or missing session project metadata is
+ignored; no matching session means no active session is returned.
 
-To intentionally hand off a session to another project, pass its explicit ID
-with `--session <sessionId>`, or use its tokenized HTTP handoff URL. The Claude
-Code prompt hook uses the same project selection rule.
+With several sessions, `review_wait` groups annotations by session and states
+each session's editing scope; `review_resolve`, `review_dismiss` and
+`review_ask` find the session from the annotation ID and refuse with
+`session_closed` when that session has stopped. `review_screenshot` takes a
+`sessionId` when more than one session is running.
+
+To intentionally hand off sessions to another project, pass explicit IDs with
+`--session <sessionId>[,<sessionId>…]`, or use a session's tokenized HTTP
+handoff URL, which always serves that one session. The Claude Code prompt hook
+uses the same project selection rule as `project`.
 
 ## Option B — plain HTTP
 
@@ -138,15 +153,20 @@ the diff. The full reasoning is in [SECURITY.md](../SECURITY.md).
 
 ```sh
 npx browser-review status --json
-npx browser-review close --session latest
+npx browser-review close ./landing.html
 ```
 
-`status` and `close` are explicit administrative commands and still operate
-across projects; `close --session latest` closes the newest active session
-globally. Prefer an explicit ID when multiple projects are open.
+`status` lists running sessions across projects. `close` acts on the current
+project (`--project-dir`, then `CLAUDE_PROJECT_DIR`, then the working
+directory): name the targets to close, pass `--project` to close all of the
+project's sessions, or pass `--session <id>[,<id>…]` for explicit IDs, which
+may belong to any project. Without arguments it closes the project's session
+only when exactly one is running; otherwise it lists them, closes nothing and
+exits with status 1. It reports how many annotations were left unresolved.
 
 Session files live in `~/.browser-review/sessions/`, or
 `$XDG_STATE_HOME/browser-review/sessions/` when that variable is non-empty. They are ordinary
-JSON, they are the source of truth, and a closed session is swept a week later.
+JSON, they are the source of truth, and a closed session is swept a week after
+it closed.
 The older `~/.local/state/browser-review` fallback is not searched, migrated, or
 deleted automatically.

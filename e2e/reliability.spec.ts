@@ -24,26 +24,28 @@ function control(route: string): string {
 
 test.beforeAll(async () => {
   dir = await fs.mkdtemp(path.join(os.tmpdir(), "browser-review-reliability-"));
-  stateHome = await fs.mkdtemp(path.join(os.tmpdir(), "browser-review-reliability-state-"));
   pageFile = path.join(dir, "reliability.html");
   await fs.copyFile("e2e/fixtures/reliability.html", pageFile);
 });
 
-test.beforeEach(() => {
+// Each test needs an empty session. Opening the same file again in the same
+// state directory would reopen the previous test's session with its comments.
+test.beforeEach(async () => {
+  stateHome = await fs.mkdtemp(path.join(os.tmpdir(), "browser-review-reliability-state-"));
   session = JSON.parse(cli("open", pageFile, "--project-dir", dir, "--json"));
 });
 
-test.afterEach(() => {
+test.afterEach(async () => {
   try {
     cli("close", "--session", session.sessionId);
   } catch {
     // The test may intentionally interrupt the connection.
   }
+  await fs.rm(stateHome, { recursive: true, force: true });
 });
 
 test.afterAll(async () => {
   await fs.rm(dir, { recursive: true, force: true });
-  await fs.rm(stateHome, { recursive: true, force: true });
 });
 
 async function annotate(page: Page, selector: string, comment: string): Promise<string> {

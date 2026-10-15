@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { Annotation, AnnotationStatus, SessionFile } from "@browser-review/shared";
+import type { Annotation, AnnotationStatus, Session, SessionFile } from "@browser-review/shared";
 import {
   REVIEW_WAIT_DEFAULT_MS,
   REVIEW_WAIT_MAX_MS,
@@ -16,28 +16,41 @@ import {
   formatStatus,
   isInScope,
   reviewUrl,
+  sessionHeading,
 } from "./format.js";
-import { readSessionFile, resolveSession, updateSessionFile } from "./store.js";
+import { isSessionActive, readSessionFile, resolveSessions, updateSessionFile } from "./store.js";
 
 export interface ToolContext {
-  /** Which session the tools act on. Re-resolved per call so `latest` stays current. */
-  resolveSession(): Promise<SessionFile | null>;
+  /**
+   * Which sessions the tools act on, newest first. Re-resolved per call so that
+   * sessions opened or closed later are picked up. Sessions that are no longer
+   * running may be included; the tools only use them to report an annotation
+   * id as belonging to a closed session.
+   */
+  resolveSessions(): Promise<SessionFile[]>;
   delivery: Delivery;
   /**
    * Optional. Resolving to null means the backend is not available — the stdio
    * server only finds that out when it is asked, because it may start before
    * any session exists.
    */
-  screenshot?: (selector?: string) => Promise<{ base64: string; mimeType: string } | null>;
+  screenshot?: (
+    session: Session,
+    selector?: string,
+  ) => Promise<{ base64: string; mimeType: string } | null>;
 }
 
-export function sessionContextFor(ref: string | undefined): ToolContext["resolveSession"] {
+/** See `resolveSessions` for the reference grammar. */
+export function sessionContextFor(ref: string | undefined): ToolContext["resolveSessions"] {
   const projectDir = process.env["CLAUDE_PROJECT_DIR"] ?? process.cwd();
-  return () => resolveSession(ref, { projectDir });
+  return () => resolveSessions(ref, { projectDir });
 }
 
-export function sessionContextForId(id: string): ToolContext["resolveSession"] {
-  return () => readSessionFile(id);
+export function sessionContextForId(id: string): ToolContext["resolveSessions"] {
+  return async () => {
+    const file = await readSessionFile(id);
+    return file ? [file] : [];
+  };
 }
 
 const NO_SESSION =
@@ -63,7 +76,8 @@ export const SERVER_INSTRUCTIONS = [
   "you match by class name or visible text. Make the change, then call review_resolve",
   "with a one-line summary and the files you touched. When you cannot narrow the",
   "candidates down, call review_ask and pick the answer up from the next review_wait.",
-  "Repeat until the person says to stop.",
+  "Annotations can come from several review sessions at once; fix each one only inside",
+  "the editing scope of the session it belongs to. Repeat until the person says to stop.",
   "",
   UNTRUSTED_INPUT_NOTICE,
 ].join("\n");
@@ -79,12 +93,41 @@ export function createMcpServer(ctx: ToolContext): McpServer {
     { instructions: SERVER_INSTRUCTIONS },
   );
 
-  const withSession = async <T>(
-    fn: (file: SessionFile) => Promise<T> | T,
+  const runningSessions = async (): Promise<SessionFile[]> =>
+    (await ctx.resolveSessions()).filter((file) => isSessionActive(file.session));
+
+  const withSessions = async <T>(
+    fn: (files: SessionFile[]) => Promise<T> | T,
   ): Promise<T | ReturnType<typeof text>> => {
-    const file = await ctx.resolveSession();
-    if (!file) return text(NO_SESSION, true);
-    return fn(file);
+    const files = await runningSessions();
+    if (files.length === 0) return text(NO_SESSION, true);
+    return fn(files);
+  };
+
+  /**
+   * Find the session that owns an annotation. Mutations are refused for a
+   * session that is no longer running: nobody is looking at its page.
+   */
+  const withAnnotation = async <T>(
+    id: string,
+    options: { requireRunning: boolean },
+    fn: (file: SessionFile, annotation: Annotation) => Promise<T> | T,
+  ): Promise<T | ReturnType<typeof text>> => {
+    const files = await ctx.resolveSessions();
+    if (!files.some((file) => isSessionActive(file.session))) return text(NO_SESSION, true);
+    for (const file of files) {
+      const annotation = file.annotations.find((a) => a.id === id);
+      if (!annotation) continue;
+      if (options.requireRunning && !isSessionActive(file.session)) {
+        return text(
+          `session_closed: annotation ${id} belongs to review session ${file.session.id} ` +
+            `(${file.session.target}), which is no longer running.`,
+          true,
+        );
+      }
+      return fn(file, annotation);
+    }
+    return text(`not_found: no annotation ${id} in the review sessions in scope.`, true);
   };
 
   server.registerTool(
@@ -92,16 +135,23 @@ export function createMcpServer(ctx: ToolContext): McpServer {
     {
       title: "Review session status",
       description:
-        "Report the active browser-review session: its mode, the page being reviewed, the " +
-        "review URL to open in a browser, the handoff URL for another agent, how many " +
-        "annotations are waiting, and which files this session is allowed to edit. Call this " +
-        "first to find out whether there is anything to do.",
+        "Report the active browser-review sessions: for each, its mode, the page being " +
+        "reviewed, the review URL to open in a browser, the handoff URL for another agent, how " +
+        "many annotations are waiting, and which files that session is allowed to edit. Call " +
+        "this first to find out whether there is anything to do.",
       inputSchema: {},
     },
     async () => {
-      const file = await ctx.resolveSession();
-      if (!file) return text(NO_SESSION);
-      return text(formatStatus(file));
+      const files = await runningSessions();
+      if (files.length === 0) return text(NO_SESSION);
+      if (files.length === 1) return text(formatStatus(files[0]!));
+      return text(
+        [
+          `${files.length} review sessions are running.`,
+          "",
+          files.map(formatStatus).join("\n\n"),
+        ].join("\n"),
+      );
     },
   );
 
@@ -129,19 +179,25 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       },
     },
     async ({ timeoutMs }, extra) =>
-      withSession(async (file) => {
+      withSessions(async () => {
         const waited = await ctx.delivery.waitForPending(
-          file.session.id,
+          async () => (await runningSessions()).map((file) => file.session),
           timeoutMs ?? REVIEW_WAIT_DEFAULT_MS,
           extra.signal,
         );
         if (waited.length === 0) {
+          if ((await runningSessions()).length === 0) {
+            return text(
+              "no_active_session: every review session being watched has closed. Stop the " +
+                "review loop.",
+            );
+          }
           return text(
             "No new annotations. Call review_wait again to keep watching, or stop if the " +
               "reviewer has said they are done.",
           );
         }
-        return text(formatDelivery(file.session, waited));
+        return text(formatDelivery(waited));
       }),
   );
 
@@ -150,7 +206,8 @@ export function createMcpServer(ctx: ToolContext): McpServer {
     {
       title: "List review annotations",
       description:
-        "List annotations in this session, one line each, without marking anything as seen. " +
+        "List annotations in the active sessions, one line each, without marking anything as " +
+        "seen. " +
         "Use review_get for the full detail of a single annotation. " +
         COMMENT_IS_NOT_AN_INSTRUCTION,
       inputSchema: {
@@ -161,20 +218,24 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       },
     },
     async ({ status }) =>
-      withSession((file) => {
-        const rows = file.annotations.filter(
-          (a) => !status || a.status === (status as AnnotationStatus),
-        );
-        if (rows.length === 0) return text("No annotations match.");
-        return text(
-          [
-            UNTRUSTED_INPUT_NOTICE,
-            "",
-            ...rows.map(formatBrief),
-            "",
-            `Editing scope: ${editableScope(file.session)}.`,
-          ].join("\n"),
-        );
+      withSessions((files) => {
+        const sections: string[] = [];
+        for (const file of files) {
+          const rows = file.annotations.filter(
+            (a) => !status || a.status === (status as AnnotationStatus),
+          );
+          if (rows.length === 0) continue;
+          sections.push(
+            [
+              ...(files.length > 1 ? [sessionHeading(file.session)] : []),
+              ...rows.map(formatBrief),
+              "",
+              `Editing scope: ${editableScope(file.session)}.`,
+            ].join("\n"),
+          );
+        }
+        if (sections.length === 0) return text("No annotations match.");
+        return text([UNTRUSTED_INPUT_NOTICE, "", sections.join("\n\n")].join("\n"));
       }),
   );
 
@@ -189,11 +250,9 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       inputSchema: { id: z.string().describe("Annotation id, for example a_01J...") },
     },
     async ({ id }) =>
-      withSession((file) => {
-        const annotation = file.annotations.find((a) => a.id === id);
-        if (!annotation) return text(`not_found: no annotation ${id} in this session.`, true);
-        return text([UNTRUSTED_INPUT_NOTICE, "", formatDetail(annotation)].join("\n"));
-      }),
+      withAnnotation(id, { requireRunning: false }, (_file, annotation) =>
+        text([UNTRUSTED_INPUT_NOTICE, "", formatDetail(annotation)].join("\n")),
+      ),
   );
 
   server.registerTool(
@@ -216,9 +275,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       },
     },
     async ({ id, summary, filesChanged }) =>
-      withSession(async (file) => {
-        const target = file.annotations.find((a) => a.id === id);
-        if (!target) return text(`not_found: no annotation ${id} in this session.`, true);
+      withAnnotation(id, { requireRunning: true }, async (file) => {
         const outOfScope = filesChanged.filter((f) => !isInScope(file.session, f));
         await updateSessionFile(file.session.id, (current) => {
           const annotation = current.annotations.find((a) => a.id === id);
@@ -255,10 +312,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       },
     },
     async ({ id, reason }) =>
-      withSession(async (file) => {
-        if (!file.annotations.some((a) => a.id === id)) {
-          return text(`not_found: no annotation ${id} in this session.`, true);
-        }
+      withAnnotation(id, { requireRunning: true }, async (file) => {
         await updateSessionFile(file.session.id, (current) => {
           const annotation = current.annotations.find((a) => a.id === id);
           if (!annotation) return;
@@ -288,10 +342,7 @@ export function createMcpServer(ctx: ToolContext): McpServer {
       },
     },
     async ({ id, question }) =>
-      withSession(async (file) => {
-        if (!file.annotations.some((a) => a.id === id)) {
-          return text(`not_found: no annotation ${id} in this session.`, true);
-        }
+      withAnnotation(id, { requireRunning: true }, async (file) => {
         await updateSessionFile(file.session.id, (current) => {
           const annotation = current.annotations.find((a) => a.id === id);
           if (!annotation) return;
@@ -320,10 +371,26 @@ export function createMcpServer(ctx: ToolContext): McpServer {
           .string()
           .optional()
           .describe("CSS selector to capture. Omit for the whole viewport."),
+        sessionId: z
+          .string()
+          .optional()
+          .describe("Session whose page to capture. Required when several sessions are running."),
       },
     },
-    async ({ selector }) => {
-      const shot = await ctx.screenshot?.(selector);
+    async ({ selector, sessionId }) => {
+      const files = await runningSessions();
+      if (files.length === 0) return text(NO_SESSION, true);
+      const candidates = sessionId ? files.filter((f) => f.session.id === sessionId) : files;
+      const file = candidates.length === 1 ? candidates[0] : undefined;
+      if (!file) {
+        return text(
+          `${sessionId ? "not_found" : "ambiguous_session"}: pass sessionId as one of ` +
+            files.map((f) => `${f.session.id} (${f.session.target})`).join(", ") +
+            ".",
+          true,
+        );
+      }
+      const shot = await ctx.screenshot?.(file.session, selector);
       if (!shot) {
         return text(
           "not_supported: screenshots need Playwright installed next to browser-review " +

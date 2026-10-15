@@ -129,13 +129,12 @@ export async function updateSessionFile(
 export async function listSessionFiles(): Promise<SessionFile[]> {
   await ensureDirs();
   const entries = await fs.readdir(sessionsDir()).catch(() => [] as string[]);
-  const files: SessionFile[] = [];
-  for (const entry of entries) {
-    if (!entry.endsWith(".json")) continue;
-    const id = entry.slice(0, -".json".length);
-    const file = await readSessionFile(id).catch(() => null);
-    if (file?.session?.id) files.push(file);
-  }
+  const read = await Promise.all(
+    entries
+      .filter((entry) => entry.endsWith(".json"))
+      .map((entry) => readSessionFile(entry.slice(0, -".json".length)).catch(() => null)),
+  );
+  const files = read.filter((file): file is SessionFile => !!file?.session?.id);
   // Session ids are ULIDs, so lexical order is creation order.
   files.sort((a, b) => (a.session.id < b.session.id ? 1 : -1));
   return files;
@@ -162,14 +161,49 @@ export async function resolveSession(
   scope?: { projectDir: string },
 ): Promise<SessionFile | null> {
   if (ref && ref !== "latest") return readSessionFile(ref);
-  const projectDir = scope ? await canonicalProjectDir(scope.projectDir) : null;
-  if (scope && !projectDir) return null;
-  for (const file of await listSessionFiles()) {
-    if (!isSessionActive(file.session)) continue;
-    if (scope && (await canonicalProjectDir(file.session.projectDir)) !== projectDir) continue;
-    return file;
+  const candidates = scope ? await projectSessions(scope.projectDir) : await listSessionFiles();
+  return candidates.find((file) => isSessionActive(file.session)) ?? null;
+}
+
+/**
+ * Several sessions at once. `project` is every session of the scope's
+ * project, running or not; `latest` or no reference is the newest running
+ * one; anything else is a comma-separated list of explicit ids, which are
+ * handoffs and may name sessions of other projects.
+ */
+export async function resolveSessions(
+  ref: string | undefined,
+  scope: { projectDir: string },
+): Promise<SessionFile[]> {
+  if (ref === "project") return projectSessions(scope.projectDir);
+  if (!ref || ref === "latest") {
+    const file = await resolveSession(ref, scope);
+    return file ? [file] : [];
   }
-  return null;
+  const ids = [...new Set(ref.split(",").map((id) => id.trim()))].filter(Boolean);
+  const files = await Promise.all(ids.map((id) => readSessionFile(id).catch(() => null)));
+  return files.filter((file): file is SessionFile => file !== null);
+}
+
+/**
+ * Every session recorded for this project, newest first, running or not.
+ * Matching is exact on the canonical directory: invalid metadata never
+ * matches.
+ */
+export async function projectSessions(projectDir: string): Promise<SessionFile[]> {
+  const canonical = await canonicalProjectDir(projectDir);
+  if (!canonical) return [];
+  const files = await listSessionFiles();
+  // Sessions of one project share the stored string, so resolve each string once.
+  const resolved = new Map<unknown, Promise<string | null>>();
+  const matches = await Promise.all(
+    files.map((file) => {
+      const stored = file.session.projectDir;
+      if (!resolved.has(stored)) resolved.set(stored, canonicalProjectDir(stored));
+      return resolved.get(stored)!.then((dir) => dir === canonical);
+    }),
+  );
+  return files.filter((_file, index) => matches[index]);
 }
 
 export async function deleteSessionFile(id: string): Promise<void> {
@@ -178,16 +212,19 @@ export async function deleteSessionFile(id: string): Promise<void> {
 }
 
 /**
- * Drop session files that are both inactive and older than the TTL. Called on
- * startup so that state does not accumulate forever without a cleanup command.
+ * Drop session files that are inactive and were closed longer ago than the
+ * TTL, counting from creation for one whose server died without closing it.
+ * Called on startup so that state does not accumulate forever without a
+ * cleanup command. Counting from the close keeps a long-lived session that is
+ * reopened now and then from being swept as soon as it closes.
  */
 export async function sweepStaleSessions(now = Date.now()): Promise<string[]> {
   const removed: string[] = [];
   for (const file of await listSessionFiles()) {
     const { session } = file;
     if (isSessionActive(session)) continue;
-    const created = Date.parse(session.createdAt);
-    if (Number.isFinite(created) && now - created < SESSION_TTL_MS) continue;
+    const since = Date.parse(session.closedAt ?? session.createdAt);
+    if (Number.isFinite(since) && now - since < SESSION_TTL_MS) continue;
     await deleteSessionFile(session.id);
     removed.push(session.id);
   }

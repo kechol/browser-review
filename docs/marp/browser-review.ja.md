@@ -626,15 +626,15 @@ CLI だけ使うなら次のどちらか
 
 ## Appendix：コマンド早見表
 
-| 分類            | コマンド                                                                   |
-| --------------- | -------------------------------------------------------------------------- |
-| **Claude Code** | `/browser-review:open` / `:resolve` / `:status` / `:close`                 |
-| **CLI**         | `browser-review open <file.html \| URL> [--port] [--project-dir] [--json]` |
-|                 | `browser-review status [--session] [--json]`                               |
-|                 | `browser-review close [--session <id\|latest>]`                            |
-|                 | `browser-review mcp [--session <id\|latest>]`（stdio MCP）                 |
-| **HTTP**        | `GET /pending` / `GET /feed`（SSE）/ `POST /resolve` / `/ask` / `/dismiss` |
-| **Vite**        | `npm install --save-dev @browser-review/vite-plugin`                       |
+| 分類            | コマンド                                                                      |
+| --------------- | ----------------------------------------------------------------------------- |
+| **Claude Code** | `/browser-review:open` / `:resolve` / `:status` / `:close`                    |
+| **CLI**         | `browser-review open <file.html \| URL>... [--port] [--project-dir] [--json]` |
+|                 | `browser-review status [--session] [--json]`                                  |
+|                 | `browser-review close [<file.html \| URL>... \| --session <id> \| --project]` |
+|                 | `browser-review mcp [--session <id\|latest\|project>]`（stdio MCP）           |
+| **HTTP**        | `GET /pending` / `GET /feed`（SSE）/ `POST /resolve` / `/ask` / `/dismiss`    |
+| **Vite**        | `npm install --save-dev @browser-review/vite-plugin`                          |
 
 **前提**：Node.js 24 以上。macOS / Linux をサポートし、Windows CLI は experimental / best-effort（実機未検証）です。
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Reads the newest running review session straight from the state directory.
+// Reads every running review session of this project straight from the state
+// directory.
 // No HTTP, no dependencies: the session file is the source of truth, and a hook
 // that runs on every prompt should not need a server to answer.
 
@@ -46,17 +47,18 @@ function canonicalProjectDir(value) {
   }
 }
 
-function newestActiveSession() {
+function activeSessions() {
   const projectDir = canonicalProjectDir(process.env.CLAUDE_PROJECT_DIR ?? process.cwd());
-  if (!projectDir) return null;
+  if (!projectDir) return [];
   let entries;
   try {
     entries = readdirSync(stateDir()).filter((name) => name.endsWith(".json"));
   } catch {
-    return null;
+    return [];
   }
   // Session ids are ULIDs, so the highest filename is the newest session.
   entries = entries.toSorted().toReversed();
+  const sessions = [];
   for (const entry of entries) {
     const file = path.join(stateDir(), entry);
     try {
@@ -67,12 +69,12 @@ function newestActiveSession() {
         alive(parsed?.session?.pid) &&
         canonicalProjectDir(parsed?.session?.projectDir) === projectDir
       )
-        return parsed;
+        sessions.push(parsed);
     } catch {
       // A half-written or foreign file is not our problem.
     }
   }
-  return null;
+  return sessions;
 }
 
 function where(annotation) {
@@ -87,37 +89,58 @@ function where(annotation) {
     .join(" ");
 }
 
-const file = newestActiveSession();
-if (!file) process.exit(0);
+function scopeOf(session) {
+  return session.mode === "html-file"
+    ? `the single file ${session.target}`
+    : `files under ${session.projectDir}`;
+}
 
-const pending = (file.annotations ?? []).filter((a) => a.status === "pending");
-if (pending.length === 0) process.exit(0);
-
-const scope =
-  file.session.mode === "html-file"
-    ? `the single file ${file.session.target}`
-    : `files under ${file.session.projectDir}`;
-
-const shown = pending.slice(0, MAX_ANNOTATIONS);
-const lines = shown.map((annotation) => {
+function describe(annotation) {
   const comment = String(annotation.comment ?? "")
     .replace(/\s+/g, " ")
     .trim();
   return `- ${annotation.id} at ${where(annotation)}\n  > ${comment}`;
-});
-if (pending.length > shown.length) {
-  lines.push(`- …and ${pending.length - shown.length} more. Use review_list to see them all.`);
 }
 
+const withPending = activeSessions()
+  .map((file) => ({
+    session: file.session,
+    pending: (file.annotations ?? []).filter((a) => a.status === "pending"),
+  }))
+  .filter(({ pending }) => pending.length > 0);
+if (withPending.length === 0) process.exit(0);
+
+const total = withPending.reduce((sum, { pending }) => sum + pending.length, 0);
+let budget = MAX_ANNOTATIONS;
+const sections = withPending.map(({ session, pending }) => {
+  const shown = pending.slice(0, budget);
+  budget -= shown.length;
+  const lines = shown.map(describe);
+  if (pending.length > shown.length) {
+    lines.push(`- …and ${pending.length - shown.length} more. Use review_list to see them all.`);
+  }
+  return { session, lines };
+});
+
+const plural = total === 1 ? "" : "s";
+const only = sections.length === 1 ? sections[0] : undefined;
 const context = [
-  `browser-review: ${pending.length} unhandled comment${pending.length === 1 ? "" : "s"} ` +
-    `from the review session at ${file.session.target}.`,
+  only
+    ? `browser-review: ${total} unhandled comment${plural} from the review session at ${only.session.target}.`
+    : `browser-review: ${total} unhandled comment${plural} from ${sections.length} review sessions.`,
   "",
   NOTICE,
   "",
-  ...lines,
-  "",
-  `Editing scope for this session: ${scope}.`,
+  ...(only
+    ? [...only.lines, "", `Editing scope for this session: ${scopeOf(only.session)}.`]
+    : [
+        ...sections.flatMap(({ session, lines }) => [
+          `Review session at ${session.target} (editing scope: ${scopeOf(session)}):`,
+          ...lines,
+          "",
+        ]),
+        "Fix each comment only inside the editing scope of the session it is listed under.",
+      ]),
   "Run /browser-review:resolve to work through them.",
 ].join("\n");
 

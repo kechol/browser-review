@@ -49,6 +49,28 @@ comments and session tokens should not be one `git add .` away from a public
 commit. The former `~/.local/state/browser-review` fallback is not searched or
 migrated automatically.
 
+## Why each target gets its own server
+
+Reviewing several pages at once means several sessions, one per target, each
+with its own server process and port. One server carrying several targets would
+have to decide which upstream a root-relative request such as `/assets/app.js`
+belongs to, and the only thing it carries is an application cookie that is
+scoped to the port. A process per target keeps that cookie, the pinned
+upstream address and any imported cookies or CA bound to exactly one target.
+
+The agent side does the gathering instead. The plugin's stdio MCP server runs
+with `--session project` and, on every call, selects every running session of
+the current project; `review_wait` keeps re-selecting while it waits, so a
+target opened mid-review joins the loop. The prompt hook reads the same set.
+Each annotation still carries its own session's editing scope: an agent fixing
+a comment from one page gains no permission to edit the file served by
+another.
+
+Opening a target that already has a running session in the project returns
+that session; for a proxy target the origin is what counts, so two paths into
+one application share a session. Opening a target whose session was closed
+reopens it with a new token and port and its earlier annotations.
+
 ## Why `review_wait` returns within 90 seconds
 
 Claude Code moves an MCP call made from the main conversation into a background
