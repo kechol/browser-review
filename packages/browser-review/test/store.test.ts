@@ -178,6 +178,15 @@ describe("sweepStaleSessions", () => {
     const left = (await listSessionFiles()).map((f) => f.session.id).toSorted();
     expect(left).toEqual(["01JJJ", "01KKK"]);
   });
+
+  it("counts from the close, so a long-lived session survives a recent close", async () => {
+    const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const recent = new Date().toISOString();
+    await writeSessionFile(session("01LLL", { pid: 2 ** 22, createdAt: old, closedAt: recent }));
+    await writeSessionFile(session("01MMM", { pid: 2 ** 22, createdAt: old, closedAt: old }));
+    expect(await sweepStaleSessions()).toEqual(["01MMM"]);
+    expect((await listSessionFiles()).map((f) => f.session.id)).toContain("01LLL");
+  });
 });
 
 it("does not rewrite the session while polling an empty inbox", async () => {

@@ -121,19 +121,25 @@ Validation: <checks actually run and results; mention material gaps>
 Task: <existing task ID, if any>
 Decision: <existing decision ID, if any>
 Supersedes: <existing reference, if any>
-Signed-off-by: <contributor name> <contributor email in angle brackets>
+Assisted-by: <agent>:<model ID>
 ```
 
 - Keep `Why`, `How` and relevant validation evidence. Omit optional sections and
   trailers that do not apply; never invent task or decision IDs.
 - Put each `Task:`, `Decision:` and `Supersedes:` reference on its own trailer
   line at the end. Record durable implementation decisions in the commit body.
-- Every commit requires DCO sign-off (`git commit -s`) under `CONTRIBUTING.md`.
-  Use the contributor's configured identity; never fabricate another person's
-  certification. The placeholders above must not appear in an actual commit.
-- DCO sign-off and cryptographic signing are separate. Respect configured signing
-  and never disable it to bypass an error. Use `git commit -S -s` when signed
-  commits are requested or configured signing needs to be explicit.
+- End an agent-assisted commit with exactly one attribution trailer,
+  `Assisted-by: <agent>:<model ID>`, for example
+  `Assisted-by: Claude:claude-opus-5-5`. Add no `Signed-off-by:` or
+  `Co-Authored-By:` trailers and no generated-by notice.
+- The DCO sign-off that `CONTRIBUTING.md` requires is the human contributor's
+  own certification. The contributor adds it, for example with
+  `git commit --amend -s`; an agent never adds it on their behalf. Use the
+  contributor's configured identity as the author. The placeholders above must
+  not appear in an actual commit.
+- Cryptographic signing is separate from the DCO trailer. Respect configured
+  signing and never disable it to bypass an error. Use `git commit -S` when
+  signed commits are requested or configured signing needs to be explicit.
 - Rewrite published history or existing signatures only with explicit authority.
   For an authorized rewrite, back up the original history, preserve unrelated
   work, and verify the resulting signatures and file tree.

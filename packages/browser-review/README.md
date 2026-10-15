@@ -23,8 +23,14 @@ Streamable HTTP. Keep these URLs private: they contain a session access token.
 
 ```sh
 npx browser-review status --json
-npx browser-review close --session latest
+npx browser-review close ./page.html
 ```
+
+`open` accepts several targets and gives each its own session. Opening a target
+that already has a running session returns it; opening one whose session was
+closed reopens it with its comments. `close` without arguments closes the
+current project's session when exactly one is running; `close --project` closes
+them all.
 
 The CLI always listens on loopback. Remote proxying is off by default, HTTPS
 only, DNS-pinned, and intended solely for a self-managed staging origin you

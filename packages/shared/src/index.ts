@@ -96,6 +96,10 @@ export interface Session {
   pid: number;
   createdAt: string;
   closedAt?: string;
+  /** Whether a cookie file was imported at startup. Its path and contents are never recorded. */
+  cookieFile?: boolean;
+  /** Whether a CA bundle was loaded at startup. Its path and contents are never recorded. */
+  caFile?: boolean;
 }
 
 export interface SessionFile {
@@ -103,8 +107,14 @@ export interface SessionFile {
   annotations: Annotation[];
 }
 
-/** One-line JSON printed by `browser-review open --json`. */
+/** One line of JSON per target, printed by `browser-review open --json`. */
 export interface OpenResult {
+  /**
+   * `started` for a new session, `running` when this project already had one
+   * for the target, and `reopened` when a closed one was resumed with its
+   * annotations.
+   */
+  state: "started" | "running" | "reopened";
   sessionId: string;
   token: string;
   reviewUrl: string;

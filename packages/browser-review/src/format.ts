@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import path from "node:path";
-import type { Annotation, Session, SessionFile } from "@browser-review/shared";
+import type { Annotation, AnnotationStatus, Session, SessionFile } from "@browser-review/shared";
 import { UNTRUSTED_INPUT_NOTICE } from "@browser-review/shared";
 import { summarizeHint } from "./annotations.js";
 import { resolveScopedPath } from "./path-util.js";
@@ -51,6 +51,11 @@ export function isInScope(session: Session, file: string): boolean {
   return resolveScopedPath(session.projectDir, file) !== null;
 }
 
+/** Heads one session's part of a listing that spans several sessions. */
+export function sessionHeading(session: Session): string {
+  return `# Session ${session.id} — ${session.target}`;
+}
+
 /** One line per annotation, for `review_list` and the hook. */
 export function formatBrief(annotation: Annotation): string {
   const top = annotation.sourceHints[0];
@@ -98,34 +103,58 @@ export function formatDetail(annotation: Annotation): string {
   return lines.join("\n");
 }
 
-/** The block that carries annotation text into a model's context. */
-export function formatDelivery(session: Session, annotations: Annotation[]): string {
+/**
+ * The block that carries annotation text into a model's context. Scopes are
+ * stated per session and never merged: an annotation may only be fixed inside
+ * the scope of the session it belongs to.
+ */
+export function formatDelivery(groups: SessionFile[]): string {
+  const total = groups.reduce((sum, group) => sum + group.annotations.length, 0);
+  const single = groups.length === 1 ? groups[0] : undefined;
   const header = [
     UNTRUSTED_INPUT_NOTICE,
     "",
-    `Editing scope for this session: ${editableScope(session)}. Do not change anything else.`,
+    single
+      ? `Editing scope for this session: ${editableScope(single.session)}. Do not change anything else.`
+      : "These annotations come from several review sessions. Fix each one only inside the " +
+        "editing scope of the session it is listed under.",
     "",
-    `${annotations.length} annotation${annotations.length === 1 ? "" : "s"} to work through:`,
+    `${total} annotation${total === 1 ? "" : "s"} to work through:`,
     "",
   ];
-  return [...header, annotations.map(formatDetail).join("\n\n---\n\n")].join("\n");
+  const body = groups.map((group) => {
+    const details = group.annotations.map(formatDetail).join("\n\n---\n\n");
+    if (single) return details;
+    return [
+      sessionHeading(group.session),
+      `Editing scope: ${editableScope(group.session)}.`,
+      "",
+      details,
+    ].join("\n");
+  });
+  return [...header, body.join("\n\n---\n\n")].join("\n");
+}
+
+export function countByStatus(annotations: Annotation[]): Record<AnnotationStatus, number> {
+  const counts = { pending: 0, acknowledged: 0, resolved: 0, dismissed: 0 };
+  for (const annotation of annotations) {
+    if (annotation.status in counts) counts[annotation.status] += 1;
+  }
+  return counts;
 }
 
 export function formatStatus(file: SessionFile): string {
   const { session, annotations } = file;
-  const counts = annotations.reduce<Record<string, number>>((acc, a) => {
-    acc[a.status] = (acc[a.status] ?? 0) + 1;
-    return acc;
-  }, {});
+  const counts = countByStatus(annotations);
   return [
     `Session ${session.id} (${session.mode})`,
     `  target:     ${session.target}`,
     `  project:    ${session.projectDir}`,
     `  review URL: ${reviewUrl(session)}`,
     `  handoff:    ${mcpUrl(session)}`,
-    `  annotations: pending ${counts["pending"] ?? 0}, acknowledged ${
-      counts["acknowledged"] ?? 0
-    }, resolved ${counts["resolved"] ?? 0}, dismissed ${counts["dismissed"] ?? 0}`,
+    `  annotations: pending ${counts.pending}, acknowledged ${counts.acknowledged}, resolved ${
+      counts.resolved
+    }, dismissed ${counts.dismissed}`,
     "",
     `Editing scope: ${editableScope(session)}.`,
   ].join("\n");

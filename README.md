@@ -53,6 +53,11 @@ and marks the pin green in your browser. If it cannot tell which of three
 buttons you meant, it asks — in a bubble on the pin you created — and picks up
 your answer from there.
 
+Open more pages whenever you like — `/browser-review:open ./pricing.html` while
+the loop runs gives that page its own session, and the same loop picks up its
+comments. Each comment is fixed only within the scope of the page it came from.
+Closing a page and opening it again later brings its unresolved comments back.
+
 You can also hand the review to a _different_ Claude Code session, which is the
 point of the whole design: review in one window, fix in another, with the
 repository open where the code actually lives.

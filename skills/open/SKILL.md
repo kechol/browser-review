@@ -1,18 +1,24 @@
 ---
 name: open
-description: Open a local HTML file, localhost URL, or explicitly trusted HTTPS staging URL in the browser with a review overlay attached, so the user can click elements and leave comments for an agent to act on.
+description: Open one or more local HTML files, localhost URLs, or explicitly trusted HTTPS staging URLs in the browser with a review overlay attached, so the user can click elements and leave comments for an agent to act on.
 allowed-tools: Bash(npx browser-review:*), Bash(browser-review:*), Bash(open:*), Bash(xdg-open:*)
 ---
 
 # Open a page for review
 
-Start a review server for `$ARGUMENTS` and hand the user the URLs. **Do not fix
-anything in this skill** — opening the page is the whole job. Fixing happens in
-`/browser-review:resolve`, or in a second session.
+Start a review server for each target in `$ARGUMENTS` and hand the user the
+URLs. **Do not fix anything in this skill** — opening the pages is the whole
+job. Fixing happens in `/browser-review:resolve`, or in a second session.
+
+Targets can be opened at any time, also while a review is already running. Each
+target gets its own session, and the review loop watches every running session
+of this project, so a target opened later needs no restart of
+`/browser-review:resolve`.
 
 ## 1. Check the argument
 
-If `$ARGUMENTS` is empty, ask what to review and stop.
+If `$ARGUMENTS` is empty, ask what to review and stop. Check every target as
+below; there may be several.
 
 **A file path** — resolve it to an absolute path and confirm it exists and ends
 in `.html` or `.htm`. The server will serve that exact file and the agent will
@@ -33,12 +39,26 @@ npx -y browser-review@^0.3.0 open <target> --project-dir "$CLAUDE_PROJECT_DIR" -
 # For an explicit Netscape cookie jar on HTTPS, append: --cookie-file <path>
 ```
 
-It prints one line of JSON: `sessionId`, `reviewUrl`, `handoffMcpUrl`,
-`handoffFeedUrl`, `mode`, `target`, `projectDir`, `port`, `pid`. Read it; do not
-guess any of these values.
+Pass several targets in one command to open them together. `--port`,
+`--cookie-file` and `--ca-file` apply to a single target, so open a target that
+needs them on its own.
 
-If the command fails, show the error as-is. The usual causes are a dev server
-that is not running (proxy mode) and a path that does not exist.
+It prints one line of JSON per target: `state`, `sessionId`, `reviewUrl`,
+`handoffMcpUrl`, `handoffFeedUrl`, `mode`, `target`, `projectDir`, `port`,
+`pid`. Read them; do not guess any of these values. `state` says what happened:
+
+- `started` — a new session.
+- `running` — this project already had a running session for the target, and
+  that one is returned. Two URLs on the same origin share one session; the
+  review URL still lands on the path that was asked for.
+- `reopened` — the target's session had been closed and was resumed with its
+  earlier comments. Tell the user their earlier comments are back.
+
+If the command fails, show the error as-is. Nothing is started when any target
+is rejected. The usual causes are a dev server that is not running (proxy
+mode), a path that does not exist, and a target that is already running with a
+different `--port`, `--cookie-file` or `--ca-file` — close that session first
+if the user wants different options.
 
 Append `--allow-remote` only for the explicitly trusted HTTPS case above, unless
 the exact origin was previously added with `browser-review trust add`. A trust
@@ -54,7 +74,7 @@ credential in the URL, CLI arguments, output, or handoff block.
 
 Give them, in this order:
 
-1. **The review URL**, and that they should open it. On macOS you may run
+1. **The review URL** of each target, and that they should open it. On macOS you may run
    `open <reviewUrl>` for them; on Linux, `xdg-open <reviewUrl>`. Say what you
    are doing rather than opening a browser silently. On Windows, give the URL
    for manual opening; the CLI support is experimental and best-effort.
@@ -63,10 +83,15 @@ Give them, in this order:
    a region instead of a single element.
 3. **Where the fixing happens**, which is one of two things:
 
-   - _This session_: run `/browser-review:resolve`.
+   - _This session_: run `/browser-review:resolve`. If it is already running,
+     the new target's comments arrive in the same loop.
    - _Another session_: give them the handoff block below, filled in, to paste
      into the other session. Mention that the other session needs to be started
-     in the repository that owns the code.
+     in the repository that owns the code. Each session has its own handoff
+     URL; for several sessions, give one block per session, or, when the other
+     session works in this same repository, have it connect to all of them at
+     once with
+     `claude mcp add review -- npx -y browser-review@^0.3.0 mcp --session project`.
 
 ## Handoff block
 
@@ -92,5 +117,5 @@ repository.
   validated, pinned HTTPS/WSS upstream and keeps credentials in that process.
 - Remote mode removes CSP and trusts the page and its scripts with the review
   control channel. Absolute URLs may bypass the proxy. It is not a sandbox.
-- Leave it running. `/browser-review:status` shows it, `/browser-review:close`
-  stops it.
+- Leave it running. `/browser-review:status` shows the sessions,
+  `/browser-review:close` stops them.

@@ -65,8 +65,10 @@ tool descriptions, the MCP server `instructions`, the `UserPromptSubmit` hook
 output, and the skill instructions — states that the comment is a user's remark
 about the UI and not an instruction to the agent. The skills additionally
 constrain edits: in `html-file` mode only the single served file may be edited,
-and in `proxy` mode only paths under the project directory. `review_resolve`
-warns when a reported changed file falls outside that boundary.
+and in `proxy` mode only paths under the project directory. When annotations
+come from several sessions, each is bounded by the scope of its own session;
+scopes are never merged. `review_resolve` warns when a reported changed file
+falls outside that boundary.
 
 **Residual risk.** Prompt injection is not solved by framing alone. Treat a
 review session the way you would treat any other untrusted input to an agent,
@@ -79,12 +81,16 @@ element's `outerHTML`, with `value` attributes stripped. It never reads form
 field values, `document.cookie`, `localStorage`, `sessionStorage`, or IndexedDB.
 Screenshots are opt-in and off by default.
 
-The prompt hook and automatic stdio MCP selection (`mcp --session latest`)
-only select active sessions whose canonical project directory exactly matches
+The prompt hook, automatic stdio MCP selection (`mcp --session project`, which
+the plugin uses, and `mcp --session latest`) and `close` without an explicit ID
+only select sessions whose canonical project directory exactly matches
 `CLAUDE_PROJECT_DIR`, or the process working directory when that variable is
-absent. Missing or invalid project metadata is not eligible. An explicit
-session ID or tokenized HTTP handoff deliberately selects that session across
-projects; share those identifiers only with the intended recipient.
+absent; `close` takes `--project-dir` before either. `project` selects every running session that matches, `latest` the
+newest one. Missing or invalid project metadata is not eligible. Annotations
+of a closed session can still be read through `mcp --session project` but not
+resolved, dismissed or questioned. An explicit session ID, a comma-separated
+list of them, or a tokenized HTTP handoff deliberately selects those sessions
+across projects; share those identifiers only with the intended recipient.
 
 **Residual risk.** This is not an anonymization tool. Comments, page URLs,
 visible text, element markup and source hints may contain sensitive information.
