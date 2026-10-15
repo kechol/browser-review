@@ -655,6 +655,9 @@ export async function startReviewServer(opts: StartOptions): Promise<RunningServ
     await delivery.close();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await updateSessionFile(opts.id, (current) => {
+      // The session may have been reopened by a new server while this one was
+      // shutting down; only the server that owns the token closes it.
+      if (current.session.token !== opts.token) return;
       current.session.closedAt = new Date().toISOString();
     }).catch(() => undefined);
   };

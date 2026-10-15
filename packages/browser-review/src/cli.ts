@@ -12,6 +12,7 @@ import { countByStatus, feedUrl, formatStatus, mcpUrl, reviewUrl } from "./forma
 import { logPath } from "./paths.js";
 import {
   ensureDirs,
+  isProcessAlive,
   isSessionActive,
   listSessionFiles,
   projectSessions,
@@ -85,6 +86,15 @@ function stopProcess(pid: number): void {
   } catch {
     // Already gone.
   }
+}
+
+/**
+ * Wait until a stopped server has exited, so that its own shutdown write has
+ * landed before the caller goes on. Gives up after `timeoutMs`.
+ */
+async function waitForExit(pid: number, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (isProcessAlive(pid) && Date.now() < deadline) await delay(25);
 }
 
 /** A problem with what the user asked for, as opposed to a crash. */
@@ -580,11 +590,14 @@ async function cmdClose(argv: string[]): Promise<void> {
     return;
   }
 
+  for (const file of targets) stopProcess(file.session.pid);
+  await Promise.all(targets.map((file) => waitForExit(file.session.pid)));
   for (const file of targets) {
-    // Marked closed here too, in case the server is already gone.
-    stopProcess(file.session.pid);
+    // Marked closed here too, in case the server died without doing it. A
+    // token that changed means the session was reopened meanwhile.
     await updateSessionFile(file.session.id, (current) => {
-      current.session.closedAt = new Date().toISOString();
+      if (current.session.token !== file.session.token) return;
+      current.session.closedAt ??= new Date().toISOString();
     }).catch(() => undefined);
     const { pending, acknowledged } = countByStatus(file.annotations);
     const unresolved = pending + acknowledged;
