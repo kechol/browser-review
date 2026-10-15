@@ -1,5 +1,16 @@
 # @browser-review/vite-plugin
 
+## 0.2.1
+
+### Patch Changes
+
+- [#11](https://github.com/kechol/browser-review/pull/11) [`44fa7fc`](https://github.com/kechol/browser-review/commit/44fa7fca0b6e72fa154780d2a546e765c7a1607f) Thanks [@kechol](https://github.com/kechol)! - Track annotation positions conservatively across DOM changes and reconnects,
+  move the default state directory to `~/.browser-review`, add experimental
+  Windows CLI support, and support exact trusted origins, localhost HTTPS,
+  session-only custom CAs, and Netscape cookie files.
+  Open status details from the connection indicator or the `s` shortcut instead
+  of a separate toolbar menu item.
+
 ## 0.2.0
 
 ### Minor Changes

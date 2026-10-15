@@ -33,7 +33,7 @@ page, a URL containing credentials, or remote HTTP.
 ## 2. Start the server
 
 ```sh
-npx -y browser-review@^0.3.0 open <target> --project-dir "$CLAUDE_PROJECT_DIR" --json
+npx -y browser-review@^0.4.0 open <target> --project-dir "$CLAUDE_PROJECT_DIR" --json
 # For an explicitly trusted remote target, append: --allow-remote
 # For a private CA on an HTTPS target, append: --ca-file <pem-path>
 # For an explicit Netscape cookie jar on HTTPS, append: --cookie-file <path>
@@ -91,7 +91,7 @@ Give them, in this order:
      URL; for several sessions, give one block per session, or, when the other
      session works in this same repository, have it connect to all of them at
      once with
-     `claude mcp add review -- npx -y browser-review@^0.3.0 mcp --session project`.
+     `claude mcp add review -- npx -y browser-review@^0.4.0 mcp --session project`.
 
 ## Handoff block
 
