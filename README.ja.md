@@ -61,7 +61,7 @@ c / l / s は効きません。**Escape** でパネルを閉じるか、要素�
 以下の npm と Homebrew のコマンドは、最初のリリースが公開された後に使えます。
 メンテナーは [公開手順のガイド](docs/publishing.md) に従ってください。
 
-単体の CLI として入れる場合（Node.js 24 以上）：
+単体の CLI として入れる場合（Node.js 24.22.1 以上（24 系）または 26.12.1 以上）：
 
 ```sh
 npm install --global browser-review
@@ -188,7 +188,7 @@ JSX 要素に `data-review-src` を付けるプラグインです。Babel が報
 
 ## 動作要件
 
-- Node.js 24 以上
+- Node.js 24.22.1 以上（24 系）または 26.12.1 以上
 - macOS または Linux。Windows の CLI は experimental / best-effort です。build、path 境界、state
   store、open/status/close の smoke は CI にありますが、今回 Windows 実機では検証していません。
   返された URL は手動で開いてください。Claude Code hook の展開や、すべての filesystem/ACL・process

@@ -67,7 +67,7 @@ repository open where the code actually lives.
 The npm and Homebrew commands below apply after the first releases have been
 published. Maintainers should follow [the publishing guide](docs/publishing.md).
 
-For a standalone CLI (Node.js 24 or newer):
+For a standalone CLI (Node.js 24.22.1 or newer on the 24 line, or 26.12.1 or newer):
 
 ```sh
 npm install --global browser-review
@@ -234,7 +234,7 @@ See [`examples/vite-react`](examples/vite-react).
 
 ## Requirements
 
-- Node.js 24 or newer
+- Node.js 24.22.1 or newer on the 24 line, or 26.12.1 or newer
 - macOS or Linux. Windows CLI support is experimental and best-effort: build,
   path-boundary, state-store, and open/status/close smoke coverage runs in CI,
   but native Windows hardware has not been verified for this change. Open the

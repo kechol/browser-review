@@ -636,7 +636,7 @@ CLI だけ使うなら次のどちらか
 | **HTTP**        | `GET /pending` / `GET /feed`（SSE）/ `POST /resolve` / `/ask` / `/dismiss`    |
 | **Vite**        | `npm install --save-dev @browser-review/vite-plugin`                          |
 
-**前提**：Node.js 24 以上。macOS / Linux をサポートし、Windows CLI は experimental / best-effort（実機未検証）です。
+**前提**：Node.js 24.22.1 以上（24 系）または 26.12.1 以上。macOS / Linux をサポートし、Windows CLI は experimental / best-effort（実機未検証）です。
 
 <p class="note">browser-review は Anthropic とは無関係の独立したサードパーティ製ツールです。
 「Claude」「Claude Code」は Anthropic PBC の商標で、対応先を示すためだけに使っています。</p>
