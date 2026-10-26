@@ -1,5 +1,13 @@
 # browser-review
 
+## 0.4.1
+
+### Patch Changes
+
+- [#24](https://github.com/kechol/browser-review/pull/24) [`d100d06`](https://github.com/kechol/browser-review/commit/d100d06a27c0cff18c55ff9cda93bb42009b949a) Thanks [@kechol](https://github.com/kechol)! - Require Node.js 24.22.1 or newer on the 24 line, or 26.12.1 or newer. Older
+  releases still accept certificates from the compromised eMudhra (emSign)
+  intermediate CAs, so an HTTPS proxy target could be impersonated.
+
 ## 0.4.0
 
 ### Minor Changes
