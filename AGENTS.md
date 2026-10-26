@@ -69,7 +69,8 @@ otherwise:
 
 ## Toolchain and verification
 
-Use Node.js 24 or newer and the pnpm version pinned in root `package.json`.
+Use Node.js 24.22.1 or newer on the 24 line, or 26.12.1 or newer. Use the pnpm
+version pinned in root `package.json`.
 Use pnpm and `pnpm-lock.yaml`; do not introduce npm/yarn lockfiles. The project
 uses TypeScript 7, oxlint and oxfmt. macOS and Linux are supported; Windows CLI
 behavior is experimental and best-effort.

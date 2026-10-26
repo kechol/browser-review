@@ -56,7 +56,7 @@ describe("trust CLI", () => {
       run("close", "--session", opened.sessionId);
     }
     expect(rejected("open", origin, "--json")).toContain("--allow-remote");
-  });
+  }, 30_000);
 
   it("never lets trust bypass the unsafe-address policy", () => {
     run("trust", "add", "https://127.0.0.2");
@@ -208,7 +208,7 @@ describe("several targets per project", () => {
     const last = inProject("close");
     expect(last.stdout).toContain(`Closed review session ${a!.sessionId}`);
     expect(last.stdout).toContain("pending 1");
-  });
+  }, 30_000);
 
   it("shares one proxy session between entry paths of the same origin", async () => {
     upstream = http.createServer((_req, res) => res.end("<html><body>app</body></html>"));

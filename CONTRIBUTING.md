@@ -5,7 +5,7 @@ setup, the checks that must pass, and how changes get released.
 
 ## Requirements
 
-- Node.js 24 or newer
+- Node.js 24.22.1 or newer on the 24 line, or 26.12.1 or newer
 - pnpm 12.5.1 (pinned in `packageManager`)
 - macOS or Linux for the supported development environment. Windows has a
   limited best-effort smoke job; see the README for its experimental scope.

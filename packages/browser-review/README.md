@@ -3,8 +3,8 @@
 Review a local HTML page or a localhost development server in your browser, then
 send element-specific comments and source hints to an MCP-compatible coding agent.
 
-Requires Node.js 24 or newer. macOS and Linux are supported; Windows CLI support
-is experimental and best-effort.
+Requires Node.js 24.22.1 or newer on the 24 line, or 26.12.1 or newer. macOS and
+Linux are supported; Windows CLI support is experimental and best-effort.
 
 ```sh
 npx browser-review open ./page.html --json

@@ -3,7 +3,8 @@
 Add source-file and line hints to JSX elements during Vite development so
 browser-review can identify the code behind a selected element.
 
-Requires Node.js 24 or newer and Vite 5 or newer.
+Requires Vite 5 or newer and Node.js 24.22.1 or newer on the 24 line, or 26.12.1
+or newer.
 
 ```sh
 pnpm add -D @browser-review/vite-plugin

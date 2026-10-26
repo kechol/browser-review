@@ -3,7 +3,7 @@
 A fictional dashboard, used to show browser-review pointing at a running dev
 server rather than a static file.
 
-From the repository root (Node.js 24+ and pnpm 12.5.1):
+From the repository root (Node.js 24.22.1+ or 26.12.1+, and pnpm 12.5.1):
 
 ```sh
 pnpm install
