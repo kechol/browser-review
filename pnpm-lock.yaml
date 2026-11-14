@@ -523,11 +523,11 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@hono/node-server@2.1.1':
-    resolution: {integrity: sha512-ELuehkj5VCBdgEw9zs+ivkKwyzzUCSQuE96YmiPvn1ECBoZCczbFXJLeEGMTYjphP6gydh4pHMqEYPVMYUVgQg==}
+  '@hono/node-server@2.1.8':
+    resolution: {integrity: sha512-jdf7FHh6A1lzjpHHQUgxsg2GeER2vMetnAOfeActzcoli6jamlK+NAwL6Dsr5Fl3BS3tYUQzCdtZjU8Qxv7bEA==}
     engines: {node: '>=20'}
     peerDependencies:
-      hono: ^4
+      hono: ^4 || ^5.0.0-0
 
   '@jridgewell/resolve-uri@3.1.2':
     resolution: {integrity: sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==}
@@ -2076,7 +2076,7 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
-  '@hono/node-server@2.1.1(hono@4.13.18)':
+  '@hono/node-server@2.1.8(hono@4.13.18)':
     dependencies:
       hono: 4.13.18
 
@@ -2106,7 +2106,7 @@ snapshots:
 
   '@modelcontextprotocol/sdk@1.32.2(zod@4.6.7)':
     dependencies:
-      '@hono/node-server': 2.1.1(hono@4.13.18)
+      '@hono/node-server': 2.1.8(hono@4.13.18)
       ajv: 8.20.0
       ajv-formats: 3.0.1(ajv@8.20.0)
       content-type: 1.0.5
