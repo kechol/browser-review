@@ -177,15 +177,17 @@ time; the archive checksum pins the CLI tarball, not the whole dependency tree.
 ### Automatic updates
 
 Like kura's release workflow, this repository can update the tap after a stable
-release when `HOMEBREW_TAP_TOKEN` is configured:
+release when the tap's GitHub App is configured:
 
-1. Create a fine-grained GitHub token scoped only to `kechol/homebrew-tap`, with
-   **Contents: Read and write**. The tap must permit that identity to push to
-   its default branch. Use an expiration and rotate it when needed.
+1. Use the GitHub App installed only on `kechol/homebrew-tap` with the
+   repository permission **Contents: Read and write**. The tap must permit the
+   App to push to its default branch.
 2. In `kechol/browser-review`, create the GitHub Environment **release**, allow
-   deployment tags matching `v*`, and add its Environment secret
-   `HOMEBREW_TAP_TOKEN`. The Homebrew job declares `environment: release` to
-   access it. The repository's default `GITHUB_TOKEN` cannot write to the tap.
+   deployment tags matching `v*`, and add the App's client ID as the
+   Environment variable `HOMEBREW_TAP_APP_CLIENT_ID` and its private key as the
+   Environment secret `HOMEBREW_TAP_APP_PRIVATE_KEY`. The Homebrew job declares
+   `environment: release` to access them. The repository's default
+   `GITHUB_TOKEN` cannot write to the tap.
 3. Push the stable release tag as described above. The same workflow publishes
    npm first; `needs: publish` then allows the Homebrew job to proceed.
    Changesets' package tags (such as `browser-review@0.2.1`) do not trigger
@@ -193,16 +195,18 @@ release when `HOMEBREW_TAP_TOKEN` is configured:
 
 The **Update Homebrew tap** job downloads the published CLI archive, generates
 and syntax-checks the formula, and uploads a `homebrew-formula` artifact. With
-the token configured, it commits only `Formula/browser-review.rb` to the tap's
-default branch and pushes it. An unchanged formula creates no commit.
+the App configured, it creates a token that can write only the tap's contents
+and is revoked when the job ends, commits only `Formula/browser-review.rb` to
+the tap's default branch and pushes it. An unchanged formula creates no commit.
 
-Without the token, formula generation still runs and the artifact is available,
-but the tap push is skipped with a notice. Prereleases do not update the stable
-formula. A mismatched tag or an unavailable npm archive fails before the tap
-is modified. If npm publication fails, the Homebrew job is skipped.
-The token is used only in the Homebrew job, not in package builds or npm publishing.
+Without `HOMEBREW_TAP_APP_CLIENT_ID`, formula generation still runs and the
+artifact is available, but the tap push is skipped with a notice. Prereleases
+do not update the stable formula. A mismatched tag or an unavailable npm
+archive fails before the tap is modified. If npm publication fails, the
+Homebrew job is skipped. The App's key is used only in the Homebrew job, not in
+package builds or npm publishing.
 
-If the tap job fails, correct the token or tap problem and rerun that job.
+If the tap job fails, correct the App or tap problem and rerun that job.
 The archive download retries for up to 15 minutes because a successful npm
 publish can precede tarball availability. Each attempt has a 30-second timeout.
 If registry propagation takes longer, confirm the exact tarball is downloadable

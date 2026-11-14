@@ -22,9 +22,9 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         node: [24, 26]
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@v7.0.1
+      - uses: pnpm/action-setup@v6.1.1
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: ${{ matrix.node }}
           check-latest: true
@@ -43,9 +43,9 @@ jobs:
     name: Windows best-effort smoke
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@v7.0.1
+      - uses: pnpm/action-setup@v6.1.1
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
           check-latest: true
@@ -59,9 +59,9 @@ jobs:
     name: Dependency licenses
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@v7.0.1
+      - uses: pnpm/action-setup@v6.1.1
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
           check-latest: true
@@ -73,7 +73,7 @@ jobs:
     name: Secret scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
       - name: Install Gitleaks
@@ -88,7 +88,7 @@ jobs:
       - name: Scan complete history including the root commit
         # A root commit has no parent; do not construct a <first-commit>^ range.
         run: gitleaks git --redact --log-opts=HEAD --report-format=sarif --report-path="$RUNNER_TEMP/gitleaks.sarif"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7.0.2
         if: always()
         with:
           name: gitleaks-results
@@ -99,9 +99,9 @@ jobs:
     name: End-to-end
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@v7.0.1
+      - uses: pnpm/action-setup@v6.1.1
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
           check-latest: true
@@ -110,7 +110,7 @@ jobs:
       - run: pnpm run build
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm run test:e2e
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7.0.2
         if: failure()
         with:
           name: playwright-report

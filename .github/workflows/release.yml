@@ -27,12 +27,12 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@v6.1.1
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
           check-latest: true
@@ -47,7 +47,7 @@ jobs:
       - run: pnpm run license-check
 
       - name: Create or update the version pull request
-        uses: changesets/action@v2
+        uses: changesets/action@v2.1.2
         with:
           version-script: pnpm run version-packages
           commit-message: "chore: version packages"
@@ -63,7 +63,7 @@ jobs:
     outputs:
       version: ${{ steps.release.outputs.version }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
       - name: Validate release tag and versioned tree
@@ -83,8 +83,8 @@ jobs:
           }
           appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
           NODE
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@v6.1.1
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
           check-latest: true
@@ -97,7 +97,7 @@ jobs:
       - run: pnpm run check:versions
       - run: pnpm run license-check
       - name: Publish versioned packages
-        uses: changesets/action@v2
+        uses: changesets/action@v2.1.2
         with:
           publish-script: pnpm run release
         env:
@@ -112,11 +112,11 @@ jobs:
     timeout-minutes: 20
     environment: release
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
+      - uses: pnpm/action-setup@v6.1.1
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
           check-latest: true
@@ -132,7 +132,7 @@ jobs:
             --output .output/homebrew/browser-review.tgz
           node scripts/generate-homebrew-formula.mjs .output/homebrew/browser-review.tgz
           ruby -c .output/homebrew/browser-review.rb
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: homebrew-formula
           path: .output/homebrew/browser-review.rb
@@ -141,18 +141,30 @@ jobs:
       - name: Check tap credentials
         id: tap
         env:
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          HOMEBREW_TAP_APP_CLIENT_ID: ${{ vars.HOMEBREW_TAP_APP_CLIENT_ID }}
         run: |
-          if [[ -n "$HOMEBREW_TAP_TOKEN" ]]; then
+          if [[ -n "$HOMEBREW_TAP_APP_CLIENT_ID" ]]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice::HOMEBREW_TAP_TOKEN is unset; download the homebrew-formula artifact to update the tap manually."
+            echo "::notice::HOMEBREW_TAP_APP_CLIENT_ID is unset; download the homebrew-formula artifact to update the tap manually."
           fi
-      - uses: actions/checkout@v7
+      # The tap's GitHub App is installed only on kechol/homebrew-tap; the token
+      # can write that repository's contents and is revoked when the job ends.
+      - name: Create a homebrew-tap token
+        id: tap-token
+        if: steps.tap.outputs.enabled == 'true'
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ vars.HOMEBREW_TAP_APP_CLIENT_ID }}
+          private-key: ${{ secrets.HOMEBREW_TAP_APP_PRIVATE_KEY }}
+          owner: kechol
+          repositories: homebrew-tap
+          permission-contents: write
+      - uses: actions/checkout@v7.0.1
         if: steps.tap.outputs.enabled == 'true'
         with:
           repository: kechol/homebrew-tap
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          token: ${{ steps.tap-token.outputs.token }}
           path: .output/homebrew-tap
       - name: Publish Homebrew formula
         if: steps.tap.outputs.enabled == 'true'
