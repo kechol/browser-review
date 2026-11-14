@@ -141,18 +141,30 @@ jobs:
       - name: Check tap credentials
         id: tap
         env:
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          HOMEBREW_TAP_APP_CLIENT_ID: ${{ vars.HOMEBREW_TAP_APP_CLIENT_ID }}
         run: |
-          if [[ -n "$HOMEBREW_TAP_TOKEN" ]]; then
+          if [[ -n "$HOMEBREW_TAP_APP_CLIENT_ID" ]]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice::HOMEBREW_TAP_TOKEN is unset; download the homebrew-formula artifact to update the tap manually."
+            echo "::notice::HOMEBREW_TAP_APP_CLIENT_ID is unset; download the homebrew-formula artifact to update the tap manually."
           fi
+      # The tap's GitHub App is installed only on kechol/homebrew-tap; the token
+      # can write that repository's contents and is revoked when the job ends.
+      - name: Create a homebrew-tap token
+        id: tap-token
+        if: steps.tap.outputs.enabled == 'true'
+        uses: actions/create-github-app-token@v3.3.0
+        with:
+          client-id: ${{ vars.HOMEBREW_TAP_APP_CLIENT_ID }}
+          private-key: ${{ secrets.HOMEBREW_TAP_APP_PRIVATE_KEY }}
+          owner: kechol
+          repositories: homebrew-tap
+          permission-contents: write
       - uses: actions/checkout@v7.0.1
         if: steps.tap.outputs.enabled == 'true'
         with:
           repository: kechol/homebrew-tap
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          token: ${{ steps.tap-token.outputs.token }}
           path: .output/homebrew-tap
       - name: Publish Homebrew formula
         if: steps.tap.outputs.enabled == 'true'
