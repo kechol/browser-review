@@ -47,7 +47,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
     "chokidar": "^5.0.0",
-    "parse5": "^8.0.1",
+    "parse5": "^8.1.1",
     "ws": "^8.22.2",
     "zod": "^4.6.7"
   },
